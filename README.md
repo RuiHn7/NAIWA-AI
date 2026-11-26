@@ -225,3 +225,10 @@ node scripts/ico-extract.mjs src.ico out.png  # 从 ico 里抽最大一帧（Ico
 - 图片后端里只有 `sdwebui` 走通了真实联调；`openai` / `stability` / `comfyui` 按官方接口实现，未接真实 key 验证 —— 但这几个即使失败也会自动落到内置渲染，不会卡住出图。
 - 应用未签名，Windows 首次运行会被 SmartScreen 拦一次。
 - 语音输入依赖 Chromium 的 Web Speech API，离线环境下不可用。
+
+---
+
+## 仓库
+
+- 源码：<https://github.com/RuiHn7/NAIWA-AI>
+- 更新检查默认读这个仓库的最新版本（`releases/latest` → `tags` → `package.json`）。
