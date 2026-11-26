@@ -165,6 +165,37 @@
   color: var(--ink-3);
 }
 
+/* 识图（视觉）模型胶囊：自动选中为中性，手动指定时描边强调 */
+.pill-vision {
+  border-color: var(--line);
+  background: var(--surface);
+  max-width: 168px;
+}
+
+.pill-vision:hover {
+  border-color: var(--line-strong);
+}
+
+.pill-vision[data-tone='auto'] {
+  color: var(--ink-3);
+}
+
+.pill-vision[data-tone='manual'] {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.pill-vision[data-tone='off'] {
+  border-style: dashed;
+  color: var(--ink-4);
+}
+
+.pill-vision .pill-label {
+  max-width: 118px;
+  font-weight: 500;
+}
+
 /* 账户余额：模型按钮左边的只读小标签，查不到时整块不渲染 */
 .pill-balance {
   display: inline-flex;

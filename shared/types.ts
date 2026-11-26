@@ -389,6 +389,12 @@ export interface AppSettings {
   autoCompress: boolean;
   /** 自动压缩触发比例（0.5 ~ 0.95），默认 0.75 */
   compressThreshold: number;
+  /** 识图（视觉）模型：指定用哪个接入项，空串表示自动挑第一个带视觉模型的接入项 */
+  visionProviderId: string;
+  /** 识图（视觉）模型：指定该接入项下的模型 id，空串表示用该接入项里第一个带视觉标记的模型 */
+  visionModelId: string;
+  /** 出图后是否自动让视觉模型核对画面（默认开；关掉就只在需要时手动调 image_understand） */
+  visionAutoCheck: boolean;
 }
 
 export type CloseAction = 'tray' | 'quit';

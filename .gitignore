@@ -9,6 +9,8 @@ release/
 # 本地联调用的截图与日志
 shots/
 *.log
+# 内置渲染的临时出图验收目录
+.paint-test/
 
 # 系统 / 编辑器
 .DS_Store

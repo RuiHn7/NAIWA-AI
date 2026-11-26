@@ -234,6 +234,20 @@ const server = http.createServer((req, res) => {
         return;
       }
 
+      /* 识图 / 出图后的视觉核对：请求里带图片 part 就走这条，返回一段固定描述。
+       * 用来验证「纯文本主模型 + 独立视觉模型」这条链路是通的。 */
+      const hasImagePart = messages.some(
+        (m) => Array.isArray(m.content) && m.content.some((p) => p?.type === 'image_url'),
+      );
+      if (hasImagePart) {
+        emitText(
+          res,
+          '画面是一片深蓝色夜空，中间横着一条偏灰紫的星带，下方是黑色山脊剪影；整体冷调、噪点明显，画面里没有用户描述的家具主体。这是模板化的风景底图，不是具体物体。',
+          model,
+        );
+        return;
+      }
+
       // 软件工程智能体工具回归：ls → grep → write_file → edit_patch → shell → git_diff → finish
       if (isAgentDrill) {
         const lastUserIdx =
@@ -267,14 +281,14 @@ const server = http.createServer((req, res) => {
           messages.map((m, i) => (m.role === 'user' ? i : -1)).filter((i) => i >= 0).pop() ?? 0;
         const doneG = messages.slice(lastUserIdxG + 1).filter((m) => m.role === 'tool').length;
         if (doneG === 0) {
-          return emitToolCall(res, model, 'call_img_1', 'generate_image', {
-            prompt: '深夜的机房里，一排服务器指示灯像星图一样闪烁，冷青色，电影感打光',
-            size: '1024x1024',
-            style: 'cinematic',
+          return emitToolCall(res, model, 'call_img_1', 'image_gen', {
+            prompt: '一张实木书桌，长方形桌面，四条笔直桌腿，浅灰墙面背景，柔和棚拍光，产品摄影',
+            size: '768x768',
+            style: 'photo',
           });
         }
         return emitToolCall(res, model, 'call_img_finish', 'finish', {
-          summary: '生图回归：图片已生成，应该在工具卡里直接看到缩略图。',
+          summary: '生图回归：图片已生成，工具卡里应带出图后端标签、模板说明与视觉核对结果。',
         });
       }
 

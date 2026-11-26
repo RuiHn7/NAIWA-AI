@@ -261,6 +261,58 @@ async function readWebPage(url: string, signal: AbortSignal): Promise<string> {
   }
 }
 
+/* ------------------------------------------------------------ 出图后的画面说明 */
+
+/** 内置渲染的六套模板，说给主模型听的人话 */
+const BUILTIN_THEME_HINT: Record<string, string> = {
+  night: '夜空银河（星野 + 山脊剪影）',
+  dusk: '黄昏天空（暖色渐变 + 太阳 + 云）',
+  day: '白天晴空（蓝天 + 白云 + 太阳光晕）',
+  landscape: '山脊风景（远山 + 云气 + 前景剪影）',
+  sea: '海面波光（水平线 + 倒影 + 波光）',
+  studio: '静物柔光（中性背景 + 柔光主光）',
+};
+
+/**
+ * 内置渲染只是模板，画不出具体主体。必须把这件事写进 observation，
+ * 否则主模型会以为「用户要的橘猫已经画好了」，对着路径硬编一段不存在的描述。
+ */
+function builtinHint(theme?: string): string | null {
+  if (!theme) return null;
+  const label = BUILTIN_THEME_HINT[theme] ?? theme;
+  return [
+    `内置渲染说明：画面是「${label}」模板，只有天空 / 山 / 水 / 柔光这些通用元素，`,
+    '**不含提示词里那个具体主体的造型**（人、动物、产品、建筑细节、文字都画不出来）。',
+    '所以要如实告诉用户这是一张模板底图；想画具体主体，得到「设置 → 图片生成」接入真实出图后端。',
+  ].join('');
+}
+
+/* ------------------------------------------------------------ 出图后的视觉核对 */
+
+/**
+ * 图生成完，主模型只能拿到一个文件路径 —— 纯文本模型根本不知道画面长什么样，
+ * 于是就会回「我无法确认这张图的内容」。这里在出图之后自动调一次视觉模型，
+ * 把客观描述拼进 observation，主模型才有依据向用户确认「画出来的是什么」。
+ * 关掉「设置 → 接入模型 → 出图后自动核对」或没有视觉模型时，给一句明确的说明，
+ * 让模型如实交代「没核对过」，而不是编造画面。
+ */
+async function visualCheck(files: string[], prompt: string): Promise<string[]> {
+  if (!files.length) return [];
+  if (getSettings().visionAutoCheck === false) return [];
+  const { describeGeneratedImage, hasVisionTarget, visionTargetLabel } = await import('./vision');
+  if (!hasVisionTarget()) {
+    return [
+      '视觉核对：未配置识图模型，本次没有核对画面。',
+      '所以不要描述这张图的具体内容（你并没有看到它），只把图片路径给用户；需要核对自己去输入框底部点「识图」选一个支持图片输入的模型。',
+    ];
+  }
+  const result = await describeGeneratedImage({ imagePath: files[0], prompt });
+  if (!result.ok) {
+    return [`视觉核对失败（${visionTargetLabel() ?? '视觉模型'}）：${result.error}`, '不要再声称自己看过这张图。'];
+  }
+  return [`视觉核对（${result.provider} · ${result.model}）：`, result.text ?? ''];
+}
+
 /* ------------------------------------------------------------------ 工具定义 */
 
 export const TOOLS: ToolDef[] = [
@@ -827,6 +879,9 @@ export const TOOLS: ToolDef[] = [
       const via = result.provider?.startsWith('builtin') ? `内置渲染 · ${result.provider.split(':')[1] ?? ''}` : result.provider;
       const lines = [`已生成 ${files.length} 张图片（${via ?? '图片后端'}）：`, ...files];
       if (result.note) lines.push('', `说明：${result.note}`);
+      const hint = builtinHint(result.builtinTheme);
+      if (hint) lines.push('', hint);
+      lines.push('', ...(await visualCheck(files, prompt)));
       lines.push('', '把图片路径告诉用户，需要调整就改写 prompt 再调用一次。');
       return { text: lines.join('\n'), filePath: files[0], files };
     },
@@ -902,6 +957,9 @@ export const TOOLS: ToolDef[] = [
       const via = result.provider?.startsWith('builtin') ? `内置渲染 · ${result.provider.split(':')[1] ?? ''}` : result.provider;
       const lines = [`已生成 ${files.length} 张图片（${via ?? '图片后端'}）：`, ...files];
       if (result.note) lines.push('', `说明：${result.note}`);
+      const hint = builtinHint(result.builtinTheme);
+      if (hint) lines.push('', hint);
+      lines.push('', ...(await visualCheck(files, str(args, 'prompt'))));
       return {
         text: lines.join('\n'),
         filePath: files[0],

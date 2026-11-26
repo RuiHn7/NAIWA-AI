@@ -823,8 +823,33 @@ export const EN: Record<string, string> = {
   '内置渲染（本地，不需要 Key）': 'Built-in renderer (local, no key needed)',
   '内置渲染是本地程序化绘制：不联网、不要 Key，画星空、山脊、海面倒影、抽象光晕最好用。':
     'The built-in renderer draws locally: no network, no key. It is best at starry skies, ridges, sea reflections and soft abstract glows.',
+  '内置渲染是本地程序化绘制：不联网、不要 Key，按提示词挑「夜空银河 / 黄昏 / 白天 / 山脊 / 海面 / 静物」六套画面模板，适合风景和氛围底图。它画不出具体的人、动物、产品和文字，要那些请接入真实出图后端。':
+    'The built-in renderer draws locally: no network, no key. It picks one of six scene templates (night sky, dusk, daylight, ridges, sea, studio) based on the prompt — good for scenery and mood backgrounds. It cannot draw specific people, animals, products or text; connect a real image backend for those.',
   '默认用内置渲染在本地画，产物落在当前会话的 artifacts/images 里。':
     'Draws locally with the built-in renderer by default; outputs land in this chat’s artifacts/images.',
+
+  /* ---------------- 识图（视觉）模型 */
+  识图: 'Vision',
+  识图模型: 'Vision model',
+  '识图模型（视觉）': 'Vision model',
+  和对话主模型解耦: 'Independent of the chat model',
+  '和对话主模型解耦：主模型是纯文本也能看图，靠这里选的模型来读。':
+    'Decoupled from the chat model: even a text-only chat model can "see" through the model chosen here.',
+  自动挑选: 'Auto pick',
+  已手动指定: 'Manually set',
+  '点一下可以换一个支持图片输入的模型': 'Click to choose another vision-capable model',
+  '还没有带视觉能力的模型，点这里去接一个': 'No vision model yet — click to add one',
+  '识图模型：自动挑选': 'Vision model: auto pick',
+  识图模型已切换: 'Vision model switched',
+  '该接入项里第一个支持图片的模型': 'First image-capable model in this provider',
+  出图后自动核对: 'Verify images automatically',
+  '打开后，每次 image_gen 出图都会把图交给上面的视觉模型描述一遍，主模型就能据此确认画面内容，而不是回「我无法确认」。':
+    'When on, every image_gen result is described by the vision model above, so the chat model can confirm what was actually drawn instead of replying "I can\'t verify".',
+  '没手动指定时，自动用第一个标了「支持图片」的模型；都没有标记就把模型名填到上面的下拉里。':
+    'Without a manual choice, the first model tagged "vision" is used; if none is tagged, pick one in the dropdown above.',
+  还没有可用的接入项: 'No usable provider yet',
+  '先在上面接入一个带视觉模型的服务（如 gpt-4o、claude-sonnet、gemini、qwen-vl），这里才能选识图模型。':
+    'Add a provider with a vision model first (gpt-4o, claude-sonnet, gemini, qwen-vl…), then you can pick one here.',
 
   /* ---------------- 时间与时长（src/lib/format.ts） */
   刚刚: 'just now',

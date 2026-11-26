@@ -78,25 +78,8 @@ function mimeOf(file: string): string {
   return map[ext] ?? 'application/octet-stream';
 }
 
-function toParts(text: string, attachmentPaths: string[]): LlmPart[] {
-  const parts: LlmPart[] = [];
-  for (const file of attachmentPaths) {
-    const mime = mimeOf(file);
-    if (mime.startsWith('image/')) {
-      try {
-        const b64 = fs.readFileSync(file).toString('base64');
-        parts.push({ type: 'image', url: `data:${mime};base64,${b64}`, mime });
-      } catch {
-        /* 读不到就跳过 */
-      }
-    }
-  }
-  parts.push({ type: 'text', text });
-  return parts;
-}
-
 /** 历史消息 → LLM 消息（跳过 system 摘要，摘要单另注入） */
-function historyToLlm(chat: Chat): LlmMessage[] {
+function historyToLlm(chat: Chat, allowImages: boolean): LlmMessage[] {
   const out: LlmMessage[] = [];
   for (const m of chat.messages) {
     if (m.summary) continue;
@@ -108,17 +91,26 @@ function historyToLlm(chat: Chat): LlmMessage[] {
     if (m.error && !m.content) continue;
     if (m.role === 'user') {
       const parts: LlmPart[] = [];
+      /** 纯文本模型不能收图片 part：把附件折成一行文字，模型才知道「有图，去调 image_understand」 */
+      const skipped: string[] = [];
       for (const a of m.attachments ?? []) {
-        if (a.kind === 'image' && a.path && fs.existsSync(a.path)) {
-          try {
-            const b64 = fs.readFileSync(a.path).toString('base64');
-            parts.push({ type: 'image', url: `data:${a.mime};base64,${b64}`, mime: a.mime });
-          } catch {
-            /* 跳过 */
-          }
+        if (a.kind !== 'image' || !a.path || !fs.existsSync(a.path)) continue;
+        if (!allowImages) {
+          skipped.push(`${a.name} → ${a.path}`);
+          continue;
+        }
+        try {
+          const b64 = fs.readFileSync(a.path).toString('base64');
+          parts.push({ type: 'image', url: `data:${a.mime};base64,${b64}`, mime: a.mime });
+        } catch {
+          /* 跳过 */
         }
       }
-      parts.push({ type: 'text', text: m.content });
+      let text = m.content;
+      if (skipped.length) {
+        text += `\n\n[图片附件：${skipped.join('；')}。当前主模型不支持图片输入，图片没有内联发送；需要看画面内容请调用 image_understand。]`;
+      }
+      parts.push({ type: 'text', text });
       out.push({ role: 'user', content: parts });
       continue;
     }
@@ -397,7 +389,7 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
       turns += 1;
       pendingToolCalls = [];
 
-      const history = historyToLlm(getChat(fresh.id)!);
+      const history = historyToLlm(getChat(fresh.id)!, apiModel.vision !== false);
       const messages: LlmMessage[] = [{ role: 'system', content: systemPrompt.system }, ...history];
 
       const stream = streamFor(provider.kind, {

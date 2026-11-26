@@ -28,6 +28,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   closeAction: 'tray',
   autoCompress: true,
   compressThreshold: 0.75,
+  visionProviderId: '',
+  visionModelId: '',
+  visionAutoCheck: true,
 };
 
 let cache: AppSettings | null = null;
@@ -51,6 +54,11 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
   next.sandboxTimeoutMs = clamp(next.sandboxTimeoutMs, 1_000, 300_000);
   next.sandboxMaxOutput = clamp(next.sandboxMaxOutput, 1_000, 500_000);
   next.compressThreshold = Math.min(0.95, Math.max(0.5, Number(next.compressThreshold) || 0.75));
+  next.visionProviderId = typeof next.visionProviderId === 'string' ? next.visionProviderId.trim() : '';
+  next.visionModelId = typeof next.visionModelId === 'string' ? next.visionModelId.trim() : '';
+  // 只留 providerId 没留 modelId 时，modelId 保持空串，由识图逻辑在该接入项里自动挑
+  if (!next.visionProviderId) next.visionModelId = '';
+  next.visionAutoCheck = next.visionAutoCheck !== false;
   if (!VALID_THEME.includes(next.theme)) next.theme = 'system';
   if (!VALID_LOCALE.includes(next.locale)) next.locale = 'zh-CN';
   if (!VALID_THINKING.includes(next.defaultThinking)) next.defaultThinking = 'high';

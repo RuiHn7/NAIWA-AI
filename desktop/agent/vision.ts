@@ -19,6 +19,7 @@ import type { LlmMessage } from '../llm/types';
 import { streamFor } from '../llm/registry';
 import { getProviderApiKey, listProviders } from '../store/providers';
 import { getChat } from '../store/chats';
+import { getSettings } from '../store/settings';
 
 const MIME_BY_EXT: Record<string, string> = {
   '.png': 'image/png',
@@ -128,25 +129,76 @@ export async function loadImageSource(source: string): Promise<{ ok: true; image
   return { ok: true, image: { bytes: fs.readFileSync(file), mime: mimeOf(file), label: path.basename(file) } };
 }
 
-/** 把图片字节交给「启用中、有 Key、模型列表里有视觉模型」的接入项读 */
-export async function understandImageBytes(input: { bytes: Buffer; mime: string; query: string }): Promise<UnderstandResult> {
-  const { bytes, mime, query } = input;
+interface VisionHit {
+  baseUrl: string;
+  apiKey: string;
+  kind: ProviderKind;
+  modelId: string;
+  label: string;
+}
 
-  let hit: { baseUrl: string; apiKey: string; kind: ProviderKind; modelId: string; label: string } | null = null;
-  for (const p of listProviders()) {
+/**
+ * 挑一个用来识图的接入项 + 模型。优先级：
+ *   1. 设置里显式指定的「识图模型」（底部那个视觉 LLM 胶囊 / 设置页选的）
+ *      · 指定了 modelId 就用它，不管模型名里有没有 vision 字样
+ *      · 只指定了接入项就优先挑该接入项里带 vision 标记的模型，没有就用第一个
+ *   2. 没指定就自动挑第一个「启用 + 有 Key + 模型列表里有视觉标记」的接入项
+ * 这样用户接一个名字里不含 vision 的多模态模型（比如自建网关的任意别名）
+ * 也能靠手动指定跑通识图。
+ */
+function pickVisionTarget(): VisionHit | null {
+  const settings = getSettings();
+  const providers = listProviders();
+
+  const wantedProvider = (settings.visionProviderId ?? '').trim();
+  if (wantedProvider) {
+    const p = providers.find(item => item.id === wantedProvider);
+    if (p && p.enabled && p.models.length) {
+      const apiKey = getProviderApiKey(p.id);
+      if (apiKey) {
+        const wantedModel = (settings.visionModelId ?? '').trim();
+        const byId = wantedModel ? p.models.find(m => m.id === wantedModel) : undefined;
+        const vm = byId ?? p.models.find(m => m.vision) ?? p.models[0];
+        if (vm) return { baseUrl: p.baseUrl, apiKey, kind: p.kind, modelId: vm.id, label: p.label };
+      }
+    }
+  }
+
+  for (const p of providers) {
     if (!p.enabled || !p.models.length) continue;
     const apiKey = getProviderApiKey(p.id);
     if (!apiKey) continue;
     const vm = p.models.find(m => m.vision);
     if (!vm) continue;
-    hit = { baseUrl: p.baseUrl, apiKey, kind: p.kind, modelId: vm.id, label: p.label };
-    break;
+    return { baseUrl: p.baseUrl, apiKey, kind: p.kind, modelId: vm.id, label: p.label };
   }
+  return null;
+}
+
+/** 当前会用来识图的接入项与模型（给界面显示「现在是谁在识图」） */
+export function currentVisionTarget(): { providerId: string; providerLabel: string; modelId: string } | null {
+  const settings = getSettings();
+  const wantedProvider = (settings.visionProviderId ?? '').trim();
+  const wantedModel = (settings.visionModelId ?? '').trim();
+  const hit = pickVisionTarget();
+  if (!hit) return null;
+  if (wantedProvider) {
+    return { providerId: wantedProvider, providerLabel: hit.label, modelId: wantedModel || hit.modelId };
+  }
+  const matched = listProviders().find(p => p.baseUrl === hit.baseUrl && p.label === hit.label);
+  return { providerId: matched?.id ?? '', providerLabel: hit.label, modelId: hit.modelId };
+}
+
+/** 把图片字节交给「启用中、有 Key、模型列表里有视觉模型」的接入项读 */
+export async function understandImageBytes(input: { bytes: Buffer; mime: string; query: string }): Promise<UnderstandResult> {
+  const { bytes, mime, query } = input;
+
+  const hit = pickVisionTarget();
   if (!hit) {
     return {
       ok: false,
       error:
-        '当前没有任何接入项带视觉模型，识图做不了。要到「设置 → 接入模型」接入一个支持图片输入的模型（如 gpt-4o、claude-sonnet、gemini、qwen-vl），或换一个支持看图的主模型再试。',
+        '当前没有任何接入项带视觉模型，识图做不了。可以在输入框底部点「识图」选一个支持图片输入的模型（如 gpt-4o、claude-sonnet、gemini、qwen-vl），或到「设置 → 接入模型」接入一个多模态接入项。',
     };
   }
 
@@ -199,6 +251,35 @@ export async function understandImageSource(input: { imageUrl: string; query: st
   const loaded = await loadImageSource(input.imageUrl);
   if (!loaded.ok) return { ok: false, error: loaded.error };
   return understandImageBytes({ bytes: loaded.image.bytes, mime: loaded.image.mime, query: input.query });
+}
+
+/** 当前有没有可用视觉模型（UI / 工具层用来决定是否提示） */
+export function hasVisionTarget(): boolean {
+  return pickVisionTarget() !== null;
+}
+
+/** 当前视觉模型的名字，例如「OpenAI · gpt-4o」；没有就返回 null */
+export function visionTargetLabel(): string | null {
+  const hit = pickVisionTarget();
+  return hit ? `${hit.label} · ${hit.modelId}` : null;
+}
+
+/**
+ * 出图之后的「视觉核对」：把刚生成的图交给视觉模型，客观描述画面上到底有什么。
+ * 存在的意义 —— 主模型（DeepSeek 等纯文本）拿不到像素，只能靠这段文字确认
+ * 「用户要的主体到底画出来没有」，而不是对着图片路径瞎猜或说「我无法确认」。
+ */
+export async function describeGeneratedImage(input: { imagePath: string; prompt: string }): Promise<UnderstandResult> {
+  const target = input.prompt.trim().slice(0, 300);
+  const query = [
+    `这张图是按提示词「${target}」生成的。请只做客观描述，不要客套话：`,
+    '1) 画面主体是什么、大概在什么位置；',
+    '2) 背景与整体色调（冷 / 暖、亮 / 暗）；',
+    '3) 构图与光线；',
+    '4) 提示词里的主体是否真的出现在画面中 —— 没出现就直说「没有出现」。',
+    '如果这只是一张模板化的风景 / 星空 / 渐变底图，而不是提示词里那个具体东西，请明确指出「这是模板画面，不是主体本身」。',
+  ].join('\n');
+  return understandImage({ imagePath: input.imagePath, query });
 }
 
 /** 顺手导出，给需要把图片落到临时文件的地方用（当前只在调试里用得上） */

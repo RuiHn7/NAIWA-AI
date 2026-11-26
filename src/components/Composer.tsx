@@ -16,7 +16,7 @@ import { formatTokens, usageLevel } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import type { PermissionMode, ThinkingLevel } from '@shared/types';
 
-type MenuKind = 'model' | 'attach' | 'permission';
+type MenuKind = 'model' | 'attach' | 'permission' | 'vision';
 
 /** 会话级上下文长度档位（PRD：300K / 600K / 1M / 自动） */
 const CONTEXT_STEPS: { value: number | 'auto'; label: string }[] = [
@@ -351,6 +351,47 @@ export function Composer() {
     open(el, 'left');
   };
 
+  /* 识图（视觉）模型：设置里显式指定优先，否则自动挑第一个带视觉标记的模型 */
+  const visionTarget = (() => {
+    const wantedProvider = (settings?.visionProviderId ?? '').trim();
+    const wantedModel = (settings?.visionModelId ?? '').trim();
+    if (wantedProvider) {
+      const p = providers.find(x => x.id === wantedProvider);
+      if (p) {
+        const m = (wantedModel ? p.models.find(x => x.id === wantedModel) : undefined) ?? p.models.find(x => x.vision) ?? p.models[0];
+        if (m) return { providerId: p.id, providerLabel: p.label, modelId: m.id, modelLabel: m.label || m.id, manual: true };
+      }
+    }
+    for (const p of providers) {
+      if (!p.enabled || !p.models.length) continue;
+      const m = p.models.find(x => x.vision);
+      if (!m) continue;
+      return { providerId: p.id, providerLabel: p.label, modelId: m.id, modelLabel: m.label || m.id, manual: false };
+    }
+    return null;
+  })();
+
+  const openVision = (el: HTMLElement) => {
+    if (!providers.some(p => p.enabled && p.models.length > 0)) {
+      toast(t('还没有可用模型，先去接入一个'), 'warn');
+      openSettings('providers');
+      return;
+    }
+    setKind('vision');
+    open(el, 'right');
+  };
+
+  /** 给某个模型打上「用来识图」的标记；传 null 表示回到自动 */
+  const pickVision = (picked: { providerId: string; modelId: string } | null) => {
+    if (!picked) {
+      void saveSettings({ visionProviderId: '', visionModelId: '' });
+      toast(t('识图模型：自动挑选'), 'ok');
+      return;
+    }
+    void saveSettings({ visionProviderId: picked.providerId, visionModelId: picked.modelId });
+    toast(t('识图模型已切换'), 'ok');
+  };
+
   const openModel = (el: HTMLElement) => {
     if (!providers.some(p => p.enabled && p.models.length > 0)) {
       toast(t('还没有可用模型，先去接入一个'), 'warn');
@@ -484,6 +525,23 @@ export function Composer() {
                 <span className="pill-label">{t(persona.name)}</span>
               </span>
             )}
+
+            {/* 识图（视觉）模型：和主模型解耦，用户贴图 / 出图后回看都靠它 */}
+            <button
+              type="button"
+              className="pill pill-vision"
+              data-tone={visionTarget ? (visionTarget.manual ? 'manual' : 'auto') : 'off'}
+              title={
+                visionTarget
+                  ? `${t('识图模型')}：${visionTarget.providerLabel} · ${visionTarget.modelLabel}\n${visionTarget.manual ? t('已手动指定') : t('自动挑选')}\n${t('点一下可以换一个支持图片输入的模型')}`
+                  : t('还没有带视觉能力的模型，点这里去接一个')
+              }
+              aria-label={t('识图模型')}
+              onClick={e => openVision(e.currentTarget)}
+            >
+              <Icon name="image" size={12} />
+              <span className="pill-label">{visionTarget ? visionTarget.modelLabel : t('识图')}</span>
+            </button>
 
             {/* 余额：贴右、在模型按钮左边 */}
             {balance?.ok && balance.display && (
@@ -675,6 +733,61 @@ export function Composer() {
                 }}
               >
                 {t('权限与审计')}
+              </MenuItem>
+            </>
+          )}
+
+          {/* 识图模型面板：显式指定哪个模型的「眼睛」来读用户贴的图 / 刚出的图 */}
+          {kind === 'vision' && (
+            <>
+              <MenuLabel>{t('识图模型')}</MenuLabel>
+              <div className="menu-note">
+                {t('和对话主模型解耦：主模型是纯文本也能看图，靠这里选的模型来读。')}
+              </div>
+              <MenuItem
+                icon={<Icon name="spark" size={14} />}
+                picked={!visionTarget?.manual}
+                hint={t('自动')}
+                onClick={() => {
+                  close();
+                  pickVision(null);
+                }}
+              >
+                {t('自动挑选')}
+              </MenuItem>
+              <MenuSep />
+              <div className="menu-scroll">
+                {providers
+                  .filter(p => p.enabled && p.models.length > 0)
+                  .flatMap(p =>
+                    p.models.map(m => {
+                      const picked = visionTarget?.manual && visionTarget.providerId === p.id && visionTarget.modelId === m.id;
+                      return (
+                        <MenuItem
+                          key={`${p.id}:${m.id}`}
+                          icon={<Icon name="image" size={14} />}
+                          picked={picked}
+                          hint={m.vision ? t('支持图片') : p.label}
+                          onClick={() => {
+                            close();
+                            pickVision({ providerId: p.id, modelId: m.id });
+                          }}
+                        >
+                          {m.label || m.id}
+                        </MenuItem>
+                      );
+                    }),
+                  )}
+              </div>
+              <MenuSep />
+              <MenuItem
+                icon={<Icon name="settings" size={14} />}
+                onClick={() => {
+                  close();
+                  openSettings('providers');
+                }}
+              >
+                {t('管理接入项')}
               </MenuItem>
             </>
           )}

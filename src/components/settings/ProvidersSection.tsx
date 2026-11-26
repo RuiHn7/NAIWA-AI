@@ -10,7 +10,7 @@ import { invoke } from '@/lib/bridge';
 import { useApp } from '@/store/useApp';
 import { useT } from '@/lib/i18n';
 import { formatContext } from '@/lib/format';
-import { Card, Empty, Group } from './ui';
+import { Card, Empty, Group, Row, Switch } from './ui';
 import type { ProviderConfig, ProviderKind, RemoteModel, ThinkingLevel } from '@shared/types';
 
 const KIND_LABEL: Record<ProviderKind, string> = {
@@ -64,6 +64,8 @@ export function ProvidersSection() {
   const providers = useApp(s => s.providers);
   const reloadProviders = useApp(s => s.reloadProviders);
   const toast = useApp(s => s.toast);
+  const settings = useApp(s => s.settings);
+  const saveSettings = useApp(s => s.saveSettings);
 
   const [draft, setDraft] = useState<Draft | null>(null);
   const [pulling, setPulling] = useState(false);
@@ -465,6 +467,74 @@ export function ProvidersSection() {
           {t('新增接入项')}
         </button>
       </div>
+
+      {/* 底部：识图（视觉）模型 —— 贴图识图、出图后核对画面都靠它，和对话主模型完全解耦 */}
+      <Card title={t('识图模型（视觉）')} sub={t('和对话主模型解耦')}>
+        {(() => {
+          const usable = providers.filter(p => p.enabled && p.hasKey && p.models.length > 0);
+          if (!usable.length) {
+            return (
+              <Empty
+                icon="image"
+                title={t('还没有可用的接入项')}
+                desc={t('先在上面接入一个带视觉模型的服务（如 gpt-4o、claude-sonnet、gemini、qwen-vl），这里才能选识图模型。')}
+              />
+            );
+          }
+          const pickedProvider = usable.find(p => p.id === settings?.visionProviderId);
+          const models = pickedProvider?.models ?? [];
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div className="row gap-8" style={{ flexWrap: 'wrap' }}>
+                <select
+                  className="select"
+                  value={settings?.visionProviderId ?? ''}
+                  onChange={e => {
+                    const id = e.target.value;
+                    // 换接入项就把模型清空，交给后端在该接入项里自动挑第一个带视觉标记的
+                    void saveSettings({ visionProviderId: id, visionModelId: '' });
+                  }}
+                >
+                  <option value="">{t('自动挑选')}</option>
+                  {usable.map(p => (
+                    <option key={p.id} value={p.id}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="select"
+                  value={settings?.visionModelId ?? ''}
+                  disabled={!pickedProvider}
+                  onChange={e => void saveSettings({ visionModelId: e.target.value })}
+                >
+                  <option value="">{t('该接入项里第一个支持图片的模型')}</option>
+                  {models.map(m => (
+                    <option key={m.id} value={m.id}>
+                      {(m.label || m.id) + (m.vision ? ` · ${t('支持图片')}` : '')}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <Row label={t('出图后自动核对')}>
+                <Switch
+                  on={settings?.visionAutoCheck !== false}
+                  onChange={visionAutoCheck => void saveSettings({ visionAutoCheck })}
+                />
+              </Row>
+              <div className="setting-hint" style={{ textAlign: 'left', marginTop: 2 }}>
+                {t('打开后，每次 image_gen 出图都会把图交给上面的视觉模型描述一遍，主模型就能据此确认画面内容，而不是回「我无法确认」。')}
+                {!pickedProvider && (
+                  <>
+                    <br />
+                    {t('没手动指定时，自动用第一个标了「支持图片」的模型；都没有标记就把模型名填到上面的下拉里。')}
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+      </Card>
     </Group>
   );
 }

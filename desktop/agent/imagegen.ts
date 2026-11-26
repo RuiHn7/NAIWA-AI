@@ -165,6 +165,8 @@ export interface GenerateResult {
   note?: string;
   /** 真正干活的后端：builtin 表示本地程序化渲染 */
   provider?: string;
+  /** 内置渲染时用了哪套模板（night / dusk / …），工具层据此告诉模型「这只是模板画面」 */
+  builtinTheme?: string;
 }
 
 export async function generateImages(input: GenerateImagesInput): Promise<GenerateResult> {
@@ -196,7 +198,7 @@ export async function generateImages(input: GenerateImagesInput): Promise<Genera
       chatId: input.chatId ?? null,
     };
     addImages([record]);
-    return { ok: true, images: [record], note: why, provider: `builtin:${themeLabel(theme)}` };
+    return { ok: true, images: [record], note: why, provider: `builtin:${themeLabel(theme)}`, builtinTheme: theme };
   };
 
   if (provider.kind === 'builtin') return paint('内置渲染');
