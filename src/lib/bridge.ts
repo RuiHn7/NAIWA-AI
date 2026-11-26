@@ -23,6 +23,8 @@ function missing(): NaiwaApi {
     invoke: fail as unknown as NaiwaApi['invoke'],
     on: () => noop,
     platform: 'web',
+    // 浏览器里 File 没有磁盘路径，交给上层走「字节导入」分支
+    pathForFile: () => '',
   };
 }
 

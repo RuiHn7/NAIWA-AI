@@ -786,8 +786,93 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: 'image_gen',
+    label: '文生图',
+    description:
+      '把文字描述画成图片。用户要求画图、生成图片、绘制图像、出海报/插画/壁纸/图标时调用。你负责把用户需求翻译成规范详细的绘图 prompt（自动补齐主体、风格、画质、构图、光影），不需要自己生成图片，调用后等工具返回图片路径。出图由独立服务完成，与当前主模型无关；没有外部出图后端时自动走内置渲染，一定能出图。',
+    parameters: {
+      type: 'object',
+      properties: {
+        prompt: {
+          type: 'string',
+          description:
+            '正向绘图提示词。按「主体 → 构图 → 光影 → 风格 → 画质」的顺序写，具体到可执行的画面细节，例如「一只橘猫趴在窗台上的木质书桌，右侧自然光斜射，浅景深，日系胶片摄影，35mm，高细节」。',
+        },
+        negative_prompt: {
+          type: 'string',
+          description: '负面提示词，写不想出现的元素，如「模糊、多余手指、水印、文字、低分辨率」。没有特别要求就留空。',
+        },
+        size: { type: 'string', description: '画布尺寸，默认 1024x1024，格式 宽x高（如 1024x1024、768x1344、1344x768）' },
+        style: { type: 'string', description: '可选风格预设：photo / cinematic / anime / watercolor / 3d / flat' },
+      },
+      required: ['prompt'],
+    },
+    async run(args, ctx) {
+      const { generateImages } = await import('./imagegen');
+      const prompt = str(args, 'prompt') || str(args, 'description');
+      if (!prompt) return { text: '缺少绘图提示词（prompt），请先写好画面描述再调用。' };
+      ctx.onProgress?.(`绘图：${prompt.slice(0, 40)}`);
+      const result = await generateImages({
+        prompt,
+        negativePrompt: str(args, 'negative_prompt') || str(args, 'negativePrompt'),
+        size: str(args, 'size', '1024x1024'),
+        count: 1,
+        style: str(args, 'style', ''),
+        workspaceId: ctx.workspace?.id ?? null,
+        chatFolder: ctx.chatFolder ?? null,
+        chatId: ctx.chatId,
+      });
+      if (!result.ok) return { text: `图片生成失败：${result.error}` };
+      const files = (result.images ?? []).flatMap(i => i.files.map(f => f.path));
+      const via = result.provider?.startsWith('builtin') ? `内置渲染 · ${result.provider.split(':')[1] ?? ''}` : result.provider;
+      const lines = [`已生成 ${files.length} 张图片（${via ?? '图片后端'}）：`, ...files];
+      if (result.note) lines.push('', `说明：${result.note}`);
+      lines.push('', '把图片路径告诉用户，需要调整就改写 prompt 再调用一次。');
+      return { text: lines.join('\n'), filePath: files[0], files };
+    },
+  },
+  {
+    name: 'image_understand',
+    label: '图片解析',
+    description:
+      '看懂一张图片：描述画面内容、提取图中所有文字、识别报错截图、解读界面信息。你自己看不见图片，图片内容全部来自本工具返回的文字。用户上传图片、截图、照片并要求看图时，必须先调用本工具，拿到结果后再回答；禁止在没有调用的情况下编造图片内容。识图由独立的视觉服务完成，与当前主模型解耦，纯文本模型也能用。',
+    parameters: {
+      type: 'object',
+      properties: {
+        image_url: {
+          type: 'string',
+          description:
+            '图片地址：可以是本地绝对路径、http(s) 链接、data URL。用户刚贴图时可以不填，默认取会话里最近一张图片。',
+        },
+        query: {
+          type: 'string',
+          description:
+            '对这张图要做的查询指令，按场景写：描述整张图片内容 / 提取图中所有文字 / 分析这个报错是什么原因 / 解读截图里的信息。不要写空泛的「看看这张图」。',
+        },
+      },
+      required: ['query'],
+    },
+    async run(args, ctx) {
+      const { understandImageSource, latestImageAttachment } = await import('./vision');
+      const source = str(args, 'image_url') || str(args, 'imageUrl') || str(args, 'url') || latestImageAttachment(ctx.chatId) || '';
+      if (!source) {
+        return {
+          text: '会话里没有找到图片。请让用户重新贴一次图，或者在 image_url 参数里给出图片的绝对路径 / 链接。',
+        };
+      }
+      const query = str(args, 'query') || '描述整张图片的内容和布局。';
+      ctx.onProgress?.(`识图：${source.startsWith('data:') ? '粘贴的图片' : path.basename(source).slice(0, 40)}`);
+      const result = await understandImageSource({ imageUrl: source, query });
+      if (!result.ok) return { text: `识图失败：${result.error}` };
+      const header = `识图结果（${result.provider} · ${result.model}）：\n`;
+      return spill(header + (result.text ?? ''), `vision-${Date.now()}`, ctx);
+    },
+  },
+  {
+    // 历史会话里模型调过的旧名，保留可执行、但不再进 schema
     name: 'generate_image',
     label: '图片生成',
+    hidden: true,
     description:
       '生成图片并落到当前会话的产物目录。没有可用的外部出图后端时会自动改用内置渲染（本地程序化绘制，一定能出图）。',
     parameters: {
@@ -803,6 +888,7 @@ export const TOOLS: ToolDef[] = [
       const { generateImages } = await import('./imagegen');
       const result = await generateImages({
         prompt: str(args, 'prompt'),
+        negativePrompt: str(args, 'negative_prompt', ''),
         size: str(args, 'size', '1024x1024'),
         count: 1,
         style: str(args, 'style', ''),
@@ -822,6 +908,46 @@ export const TOOLS: ToolDef[] = [
         // 全部产物都带回去，渲染层直接在对话里内联显示
         files,
       };
+    },
+  },
+  {
+    name: 'understand_image',
+    label: '识别图片',
+    hidden: true,
+    description:
+      '看懂一张图片：读截图里的信息、提取图中文字、识别报错、分析画面内容。会自动选一个支持图片输入的接入模型（与当前主模型解耦，纯文本模型也能用）。用户贴了图片并询问与图片相关的问题时必须先调用本工具。',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: {
+          type: 'string',
+          description: '图片文件路径。用户刚贴图时可以不填，默认取会话里最近一张图片。',
+        },
+        query: {
+          type: 'string',
+          description:
+            '针对这张图的具体查询指令，按场景写：看内容→「描述整张图片的内容和布局」；读文字→「提取图中所有文字，按出现位置排列」；报错→「读出报错信息全文，分析可能的原因」；截图→「解读这张界面截图里的关键信息和状态」。不要写空泛的「看看这张图」。',
+        },
+      },
+      required: ['query'],
+    },
+    async run(args, ctx) {
+      const { understandImageSource, latestImageAttachment } = await import('./vision');
+      const target = str(args, 'path') || latestImageAttachment(ctx.chatId) || '';
+      if (!target) {
+        return {
+          text:
+            '会话里没有找到图片。请让用户重新贴一次图，或者在 path 参数里给出图片的绝对路径。',
+        };
+      }
+      const query = str(args, 'query');
+      ctx.onProgress?.(`识别图片：${path.basename(target)}`);
+      const result = await understandImageSource({ imageUrl: target, query });
+      if (!result.ok) {
+        return { text: `识图失败：${result.error}` };
+      }
+      const header = `识图结果（${result.provider} · ${result.model}）：\n`;
+      return spill(header + (result.text ?? ''), `vision-${Date.now()}`, ctx);
     },
   },
 ];

@@ -216,10 +216,19 @@ export async function generateImages(input: GenerateImagesInput): Promise<Genera
     let files: { path: string; url: string }[] = [];
 
     if (provider.kind === 'openai') {
+      // 该接口没有 negative_prompt 字段，把负面描述折进正向文本，语义仍生效
+      const negative = (input.negativePrompt ?? '').trim();
+      const body = {
+        model: 'gpt-image-1',
+        prompt: negative ? `${prompt}\n\n避免出现：${negative}` : prompt,
+        n: count,
+        size: input.size,
+        response_format: 'b64_json',
+      };
       const response = await fetch(`${base}/images/generations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-        body: JSON.stringify({ model: 'gpt-image-1', prompt, n: count, size: input.size, response_format: 'b64_json' }),
+        body: JSON.stringify(body),
         signal: AbortSignal.timeout(180_000),
       });
       if (!response.ok) {

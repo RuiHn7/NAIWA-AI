@@ -21,7 +21,7 @@ import type {
   Workspace,
 } from '@shared/types';
 import type { InvokeMap, EventMap, PullModelsResult, TestProviderResult, BalanceResult } from '@shared/ipc';
-import { dataRoot } from '../store/paths';
+import { dataRoot, scratchDir } from '../store/paths';
 
 import {
   getChat,
@@ -522,27 +522,12 @@ export function registerIpc(emit: Emit): void {
     const options: Electron.OpenDialogOptions = { properties: ['openFile', 'multiSelections'], filters };
     const result = win ? await dialog.showOpenDialog(win, options) : await dialog.showOpenDialog(options);
     if (result.canceled) return [];
-    const mimeMap: Record<string, string> = {
-      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
-      '.gif': 'image/gif', '.bmp': 'image/bmp', '.avif': 'image/avif', '.pdf': 'application/pdf',
-      '.md': 'text/markdown', '.txt': 'text/plain', '.json': 'application/json',
-    };
-    return result.filePaths.map(file => {
-      const ext = path.extname(file).toLowerCase();
-      const mime = mimeMap[ext] ?? 'application/octet-stream';
-      const stat = fs.statSync(file);
-      const isImage = mime.startsWith('image/');
-      return {
-        id: randomUUID(),
-        name: path.basename(file),
-        path: file,
-        mime,
-        size: stat.size,
-        kind: (isImage ? 'image' : 'file') as 'image' | 'file',
-        preview: isImage ? `data:${mime};base64,${fs.readFileSync(file).toString('base64')}` : undefined,
-      };
-    });
+    return describeFiles(result.filePaths);
   });
+  // 拖拽 / 粘贴：渲染层只有 File 对象，preload 换成绝对路径后走这里，绝不弹系统选择框
+  handle('dialog:describe-files', ({ paths }) => describeFiles(Array.isArray(paths) ? paths : []));
+  // 没有磁盘路径的虚拟文件（截图粘贴、浏览器拖拽）：接收字节落盘，再按同一套逻辑描述
+  handle('dialog:import-files', ({ files }) => importFileBytes(files));
   handle('notification:show', ({ title, body }) => {
     if (!getSettings().notifications) return;
     if (Notification.isSupported()) new Notification({ title, body }).show();
@@ -550,6 +535,126 @@ export function registerIpc(emit: Emit): void {
 }
 
 /* ------------------------------------------------------------------ 导出 */
+
+const MIME_BY_EXT: Record<string, string> = {
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
+  '.bmp': 'image/bmp',
+  '.avif': 'image/avif',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.pdf': 'application/pdf',
+  '.md': 'text/markdown',
+  '.markdown': 'text/markdown',
+  '.txt': 'text/plain',
+  '.json': 'application/json',
+  '.csv': 'text/csv',
+  '.html': 'text/html',
+  '.css': 'text/css',
+  '.js': 'text/javascript',
+  '.ts': 'text/plain',
+  '.tsx': 'text/plain',
+  '.jsx': 'text/plain',
+  '.py': 'text/plain',
+  '.log': 'text/plain',
+  '.xml': 'text/xml',
+  '.yml': 'text/yaml',
+  '.yaml': 'text/yaml',
+  '.zip': 'application/zip',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xls': 'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.ppt': 'application/vnd.ms-powerpoint',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+};
+
+/** 图片预览的内联上限：再大就不 base64 塞进 state 了，只留路径 + 图标 */
+const PREVIEW_MAX_BYTES = 12 * 1024 * 1024;
+
+export interface DescribedFile {
+  id: string;
+  name: string;
+  path: string;
+  mime: string;
+  size: number;
+  kind: 'image' | 'file';
+  preview?: string;
+}
+
+/**
+ * 按绝对路径造附件描述。点击选择（dialog:pick-files）和拖拽/粘贴
+ * （dialog:describe-files）共用这一份，保证两条链路产出的字段与预览逻辑完全一致。
+ * 读不到/是目录的路径直接跳过。
+ */
+function describeFiles(filePaths: string[]): DescribedFile[] {
+  const out: DescribedFile[] = [];
+  const seen = new Set<string>();
+  for (const file of filePaths) {
+    if (typeof file !== 'string' || !file) continue;
+    const abs = path.resolve(file);
+    if (seen.has(abs)) continue;
+    seen.add(abs);
+    let stat: fs.Stats;
+    try {
+      stat = fs.statSync(abs);
+    } catch {
+      continue;
+    }
+    if (!stat.isFile()) continue;
+    const mime = MIME_BY_EXT[path.extname(abs).toLowerCase()] ?? 'application/octet-stream';
+    const isImage = mime.startsWith('image/');
+    let preview: string | undefined;
+    if (isImage && stat.size <= PREVIEW_MAX_BYTES) {
+      try {
+        preview = `data:${mime};base64,${fs.readFileSync(abs).toString('base64')}`;
+      } catch {
+        preview = undefined;
+      }
+    }
+    out.push({
+      id: randomUUID(),
+      name: path.basename(abs),
+      path: abs,
+      mime,
+      size: stat.size,
+      kind: isImage ? 'image' : 'file',
+      preview,
+    });
+  }
+  return out;
+}
+
+/** 粘贴的截图 / 浏览器拖进来的虚拟文件没有磁盘路径：把字节落到 scratch 目录，再走同一套描述逻辑 */
+function importFileBytes(files: { name: string; mime?: string; data: Uint8Array }[]): DescribedFile[] {
+  const dir = path.join(scratchDir(), 'imported');
+  fs.mkdirSync(dir, { recursive: true });
+  const written: string[] = [];
+  for (const item of Array.isArray(files) ? files : []) {
+    if (!item || !item.data) continue;
+    const bytes = item.data instanceof Uint8Array ? item.data : new Uint8Array(item.data as ArrayBufferLike);
+    if (!bytes.byteLength) continue;
+    // 名字只留文件名部分，避免 ../ 之类跑出目录
+    const raw = typeof item.name === 'string' && item.name ? item.name : 'pasted-file';
+    const safe = path.basename(raw).replace(/[\\/:*?"<>|]/g, '_') || 'pasted-file';
+    const ext = path.extname(safe);
+    const stem = ext ? safe.slice(0, -ext.length) : safe;
+    const stamp = Date.now().toString(36);
+    let target = path.join(dir, `${stem}-${stamp}${ext}`);
+    let n = 1;
+    while (fs.existsSync(target)) target = path.join(dir, `${stem}-${stamp}-${n++}${ext}`);
+    try {
+      fs.writeFileSync(target, Buffer.from(bytes));
+      written.push(target);
+    } catch {
+      // 单个文件写失败不影响其余文件
+    }
+  }
+  return describeFiles(written);
+}
 
 function escapeHtml(text: string): string {
   return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

@@ -71,6 +71,7 @@ export function Composer() {
   const patchChat = useApp(s => s.patchChat);
   const compress = useApp(s => s.compress);
   const addAttachments = useApp(s => s.addAttachments);
+  const addAttachmentFiles = useApp(s => s.addAttachmentFiles);
   const removeAttachment = useApp(s => s.removeAttachment);
   const clearAttachments = useApp(s => s.clearAttachments);
   const openSettings = useApp(s => s.openSettings);
@@ -95,6 +96,8 @@ export function Composer() {
   /** 模型列表滚动区，用来量出模型列表的右边缘 */
   const modelListRef = useRef<HTMLDivElement | null>(null);
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  /** 拖拽高亮的真值镜像：dragover 里读 ref 不会读到旧闭包 */
+  const draggingRef = useRef(false);
   const { menu, open, close } = useMenu();
 
   const streaming = !!activeChatId && streamingChatId === activeChatId;
@@ -197,38 +200,101 @@ export function Composer() {
 
   /* ---------------------------------------------------------------- 拖拽 */
 
+  // 拖拽与「点击选择文件」是两条独立入口：
+  //   · 点击 → addAttachments(kind) → IPC dialog:pick-files → 系统选择框
+  //   · 拖拽/粘贴 → addAttachmentFiles(files) → preload 换路径 → IPC dialog:describe-files
+  // 两者最后都落到同一个 attachments 状态与同一套附件渲染，不会再弹选择框。
   useEffect(() => {
+    // 计数解决「拖过子元素时 enter/leave 成对触发」的问题：归零才算真正离开
     let depth = 0;
+
+    const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files');
+
     const onDragEnter = (e: DragEvent) => {
-      if (!e.dataTransfer?.types.includes('Files')) return;
+      if (!hasFiles(e)) return;
+      // 不 preventDefault 的话，Electron 会用默认行为接管这次拖放（打开文件/跳转）
+      e.preventDefault();
+      e.stopPropagation();
       depth += 1;
       setDragging(true);
     };
+
     const onDragOver = (e: DragEvent) => {
-      if (!e.dataTransfer?.types.includes('Files')) return;
+      if (!hasFiles(e)) return;
       e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+      if (!draggingRef.current) {
+        draggingRef.current = true;
+        setDragging(true);
+      }
     };
-    const onDragLeave = () => {
+
+    const onDragLeave = (e: DragEvent) => {
+      // 拖到窗口外 / 松开在外部时 dataTransfer.types 可能已经空了，
+      // 所以先按「是否离开窗口」硬收一次，再走正常的计数逻辑。
+      if (e.relatedTarget === null) {
+        depth = 0;
+        draggingRef.current = false;
+        setDragging(false);
+        return;
+      }
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      e.stopPropagation();
       depth = Math.max(0, depth - 1);
-      if (depth === 0) setDragging(false);
+      if (depth === 0) {
+        draggingRef.current = false;
+        setDragging(false);
+      }
     };
+
+    // 拖拽被系统打断（按 Esc、拖出到别的应用）时也要把高亮擦掉
+    const onDragEnd = () => {
+      depth = 0;
+      draggingRef.current = false;
+      setDragging(false);
+    };
+
     const onDrop = (e: DragEvent) => {
       depth = 0;
+      draggingRef.current = false;
       setDragging(false);
+      // 这两句是关键：没有它们浏览器会拿文件去导航（把当前页面替换成文件本身）
       e.preventDefault();
-      if (e.dataTransfer?.files.length) void addAttachments('any');
+      e.stopPropagation();
+      const dropped = e.dataTransfer?.files;
+      if (!dropped || !dropped.length) return;
+      void addAttachmentFiles(dropped);
     };
+
+    // 兜底：拖到窗口任意位置都不许触发「用文件替换页面」的默认行为
+    const blockDefault = (e: DragEvent) => {
+      if (hasFiles(e)) e.preventDefault();
+    };
+
     window.addEventListener('dragenter', onDragEnter);
     window.addEventListener('dragover', onDragOver);
     window.addEventListener('dragleave', onDragLeave);
     window.addEventListener('drop', onDrop);
+    window.addEventListener('dragend', onDragEnd);
+    // 捕获阶段再兜一层，防止某个子组件的 stopPropagation 把 window 监听吃掉
+    window.addEventListener('dragover', blockDefault, true);
+    window.addEventListener('drop', blockDefault, true);
+    document.addEventListener('drop', blockDefault, true);
+    document.addEventListener('dragover', blockDefault, true);
     return () => {
       window.removeEventListener('dragenter', onDragEnter);
       window.removeEventListener('dragover', onDragOver);
       window.removeEventListener('dragleave', onDragLeave);
       window.removeEventListener('drop', onDrop);
+      window.removeEventListener('dragend', onDragEnd);
+      window.removeEventListener('dragover', blockDefault, true);
+      window.removeEventListener('drop', blockDefault, true);
+      document.removeEventListener('drop', blockDefault, true);
+      document.removeEventListener('dragover', blockDefault, true);
     };
-  }, [addAttachments]);
+  }, [addAttachmentFiles]);
 
   /* ---------------------------------------------------------------- 派生 */
 
@@ -308,7 +374,7 @@ export function Composer() {
   /* ---------------------------------------------------------------- 渲染 */
 
   return (
-    <div className="composer-zone">
+    <div className="composer-zone" data-dragging={dragging ? 'true' : undefined}>
       {attachments.length > 0 && (
         <div className="composer-wrap">
           <div className="attach-tray">
@@ -366,8 +432,11 @@ export function Composer() {
               }
             }}
             onPaste={e => {
-              const files = Array.from(e.clipboardData.items).filter(i => i.kind === 'file');
-              if (files.length) void addAttachments('any');
+              // 粘贴图片 / 文件：和拖拽同一条链路，直接读文件本体，不弹选择框
+              const files = Array.from(e.clipboardData?.files ?? []);
+              if (!files.length) return;
+              e.preventDefault();
+              void addAttachmentFiles(files);
             }}
           />
 
@@ -755,6 +824,7 @@ export function Composer() {
           <div className="drop-box">
             <Icon name="image" size={30} />
             {t('松开即可添加文件')}
+            <span className="drop-box-hint">{t('支持一次拖入多个文件')}</span>
           </div>
         </div>
       )}

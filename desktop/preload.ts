@@ -3,7 +3,7 @@
  * 只把 shared/ipc.ts 里登记过的通道暴露出去，白名单之外一律不可达。
  * ==========================================================================*/
 
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type { NaiwaApi } from '@shared/ipc';
 
 const api: NaiwaApi = {
@@ -16,6 +16,15 @@ const api: NaiwaApi = {
     return () => ipcRenderer.removeListener(channel, listener);
   },
   platform: process.platform,
+  // 拖拽进来的 File 没有 .path 了，只能靠 webUtils 换真实磁盘路径
+  pathForFile(file) {
+    try {
+      if (!file) return '';
+      return webUtils.getPathForFile(file as File) ?? '';
+    } catch {
+      return '';
+    }
+  },
 };
 
 contextBridge.exposeInMainWorld('naiwa', api);

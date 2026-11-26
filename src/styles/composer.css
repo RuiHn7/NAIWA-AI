@@ -396,6 +396,12 @@
 
 /* ------------------------------------------------------------------ 拖拽遮罩 */
 
+/* 悬停放置态：输入框本身也描一圈强调色，即使遮罩还没铺开也能看出来 */
+.composer-zone[data-dragging='true'] .composer {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-2);
+}
+
 .drop-overlay {
   position: fixed;
   inset: 0;
@@ -405,6 +411,8 @@
   background: color-mix(in srgb, var(--bg-0) 78%, transparent);
   backdrop-filter: blur(4px);
   animation: fade-in var(--dur-fast) var(--ease);
+  /* 遮罩只是视觉反馈，不能吃掉 drop 事件 */
+  pointer-events: none;
 }
 
 .drop-box {
@@ -419,6 +427,13 @@
   color: var(--accent);
   font-size: 14px;
   font-weight: 560;
+  box-shadow: var(--shadow-2);
+}
+
+.drop-box-hint {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--fg-2);
 }
 
 /* ------------------------------------------------------------------ 语音波形 */

@@ -23,7 +23,7 @@ import type {
   ThinkingLevel,
   Workspace,
 } from '@shared/types';
-import { invoke, on } from '@/lib/bridge';
+import { api, invoke, on } from '@/lib/bridge';
 import { translate } from '@/lib/i18n';
 import type { BalanceResult } from '@shared/ipc';
 
@@ -148,6 +148,8 @@ interface AppState {
 
   saveSettings(patch: Partial<AppSettings>): Promise<void>;
   addAttachments(kind: 'any' | 'image'): Promise<void>;
+  /** 拖拽 / 粘贴进来的 File：直接读文件本体，不走系统选择框 */
+  addAttachmentFiles(files: File[] | FileList): Promise<void>;
   removeAttachment(id: string): Promise<void>;
   clearAttachments(): void;
 
@@ -217,6 +219,17 @@ function isNewerVersion(a: string, b: string): boolean {
     if (x < y) return false;
   }
   return false;
+}
+
+/** 附件合并：按磁盘路径去重（同一个文件拖两次只留一个），保持先来后到的顺序 */
+function mergeAttachmentList(current: PendingAttachment[], incoming: PendingAttachment[]): PendingAttachment[] {
+  const merged = [...current];
+  for (const f of incoming) {
+    if (!f?.path) continue;
+    if (merged.some(m => m.path === f.path)) continue;
+    merged.push(f);
+  }
+  return merged;
 }
 
 /* ------------------------------------------------------------------ store */
@@ -558,12 +571,69 @@ export const useApp = create<AppState>((set, get) => ({
   async addAttachments(kind) {
     const files = await invoke('dialog:pick-files', { kind });
     if (!files.length) return;
-    const merged = [...get().attachments];
-    for (const f of files) {
-      if (merged.some(m => m.path === f.path)) continue;
-      merged.push(f);
+    set({ attachments: mergeAttachmentList(get().attachments, files) });
+  },
+
+  /**
+   * 拖拽 / 粘贴入口：渲染层只有 File 对象，先经 preload 换绝对路径，
+   * 再让主进程按路径造附件描述（与点击选择完全同一套字段和图片预览逻辑）。
+   * 全程不碰 dialog:pick-files，所以松手不会再弹系统选择框。
+   */
+  async addAttachmentFiles(files) {
+    const list = Array.from(files ?? []);
+    if (!list.length) return;
+    const paths: string[] = [];
+    // 没有磁盘路径的（粘贴的截图、浏览器拖进来的虚拟文件）走字节导入
+    const blobs: { name: string; mime?: string; data: Uint8Array }[] = [];
+    let empty = 0;
+    for (const file of list) {
+      let p = '';
+      try {
+        p = api.pathForFile(file);
+      } catch {
+        p = '';
+      }
+      if (p) {
+        paths.push(p);
+        continue;
+      }
+      if (!file || !file.size) {
+        empty += 1;
+        continue;
+      }
+      try {
+        blobs.push({
+          name: file.name || 'pasted-file',
+          mime: file.type || undefined,
+          data: new Uint8Array(await file.arrayBuffer()),
+        });
+      } catch {
+        empty += 1;
+      }
     }
-    set({ attachments: merged });
+
+    const described: PendingAttachment[] = [];
+    if (paths.length) {
+      try {
+        described.push(...(await invoke('dialog:describe-files', { paths })));
+      } catch (err) {
+        get().toast(`添加附件失败：${(err as Error).message}`, 'error');
+      }
+    }
+    if (blobs.length) {
+      try {
+        described.push(...(await invoke('dialog:import-files', { files: blobs })));
+      } catch (err) {
+        get().toast(`添加附件失败：${(err as Error).message}`, 'error');
+      }
+    }
+
+    if (!described.length) {
+      get().toast(empty > 0 ? '这些文件是空的，添加不了' : '这些文件读不出来（可能是文件夹或没有访问权限）', 'error');
+      return;
+    }
+    set({ attachments: mergeAttachmentList(get().attachments, described) });
+    if (empty > 0) get().toast(`有 ${empty} 个文件读不出来，已跳过`, 'warn');
   },
 
   async removeAttachment(id) {

@@ -300,6 +300,10 @@ export interface InvokeMap {
   /* -------------------------------------------------- 系统 */
   'shell:open-external': { req: { url: string }; res: void };
   'dialog:pick-files': { req: { kind: 'any' | 'image' }; res: { id: string; name: string; path: string; mime: string; size: number; kind: 'image' | 'file'; preview?: string }[] };
+  /** 拖拽 / 粘贴进来的文件：渲染层只拿得到 File，先由 preload 换成绝对路径再交给这里 */
+  'dialog:describe-files': { req: { paths: string[] }; res: { id: string; name: string; path: string; mime: string; size: number; kind: 'image' | 'file'; preview?: string }[] };
+  /** 没有磁盘路径的文件（粘贴的截图、从浏览器拖进来的虚拟文件）：把字节交上来，落盘再当附件 */
+  'dialog:import-files': { req: { files: { name: string; mime?: string; data: Uint8Array }[] }; res: { id: string; name: string; path: string; mime: string; size: number; kind: 'image' | 'file'; preview?: string }[] };
   'notification:show': { req: { title: string; body: string }; res: void };
 }
 
@@ -324,4 +328,9 @@ export interface NaiwaApi {
   invoke<K extends InvokeChannel>(channel: K, payload: InvokeMap[K]['req']): Promise<InvokeMap[K]['res']>;
   on<K extends EventChannel>(channel: K, handler: (payload: EventMap[K]) => void): () => void;
   platform: string;
+  /**
+   * 把拖拽 / 粘贴进来的 File 换成磁盘绝对路径（Electron 32+ 移除了 File.path，
+   * 只剩 webUtils.getPathForFile）。拿不到路径（例如纯内存文件）时返回空字符串。
+   */
+  pathForFile(file: unknown): string;
 }
