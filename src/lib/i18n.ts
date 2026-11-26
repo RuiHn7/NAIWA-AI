@@ -842,28 +842,36 @@ export const EN: Record<string, string> = {
   '默认用内置渲染在本地画，产物落在当前会话的 artifacts/images 里。':
     'Draws locally with the built-in renderer by default; outputs land in this chat’s artifacts/images.',
 
-  /* ---------------- 识图（视觉）模型 */
+  /* ---------------- 识图 */
   识图: 'Vision',
-  识图模型: 'Vision model',
-  '识图模型（视觉）': 'Vision model',
-  和对话主模型解耦: 'Independent of the chat model',
-  '和对话主模型解耦：主模型是纯文本也能看图，靠这里选的模型来读。':
-    'Decoupled from the chat model: even a text-only chat model can "see" through the model chosen here.',
   自动挑选: 'Auto pick',
   已手动指定: 'Manually set',
-  '点一下可以换一个支持图片输入的模型': 'Click to choose another vision-capable model',
-  '还没有带视觉能力的模型，点这里去接一个': 'No vision model yet — click to add one',
-  '识图模型：自动挑选': 'Vision model: auto pick',
-  识图模型已切换: 'Vision model switched',
   '该接入项里第一个支持图片的模型': 'First image-capable model in this provider',
   出图后自动核对: 'Verify images automatically',
-  '打开后，每次 image_gen 出图都会把图交给上面的视觉模型描述一遍，主模型就能据此确认画面内容，而不是回「我无法确认」。':
-    'When on, every image_gen result is described by the vision model above, so the chat model can confirm what was actually drawn instead of replying "I can\'t verify".',
-  '没手动指定时，自动用第一个标了「支持图片」的模型；都没有标记就把模型名填到上面的下拉里。':
-    'Without a manual choice, the first model tagged "vision" is used; if none is tagged, pick one in the dropdown above.',
-  还没有可用的接入项: 'No usable provider yet',
-  '先在上面接入一个带视觉模型的服务（如 gpt-4o、claude-sonnet、gemini、qwen-vl），这里才能选识图模型。':
-    'Add a provider with a vision model first (gpt-4o, claude-sonnet, gemini, qwen-vl…), then you can pick one here.',
+
+  /* ---------------- 本机识图（默认能力，无需配置） */
+  '本机识图': 'Local vision',
+  '本机识图已就绪': 'On-device vision is ready',
+  '本机识图（默认，无需配置）': 'On-device vision (default, no setup)',
+  '识图（可选精度增强）': 'Vision (optional accuracy boost)',
+  '默认用软件内置的本机识图': 'Uses built-in on-device vision by default',
+  '已回到本机识图（默认）': 'Back to on-device vision (default)',
+  '已启用多模态精度增强': 'Multimodal boost enabled',
+  '点一下可以换一个多模态模型（可选）': 'Click to pick another multimodal model (optional)',
+  '软件内置解码、像素分析、离线 OCR 与生成历史反查，不需要任何配置':
+    'Built-in decoding, pixel analysis, offline OCR and image-history lookup — no setup needed',
+  '点这里可选接入一个多模态模型，提升照片里具体物体的识别精度':
+    'Click to optionally add a multimodal model for better recognition of objects in photos',
+  '软件内置本机识图已就绪：解码、像素分析、Windows 离线 OCR、生成历史反查，不需要任何配置。下面列出的多模态模型只是可选的精度增强 —— 指定后会在识图结果上再叠加一段画面描述。':
+    'Built-in on-device vision is ready: decoding, pixel analysis, Windows offline OCR and image-history lookup — no setup needed. The multimodal models below are only an optional accuracy boost; picking one adds an extra description on top of the on-device result.',
+  '软件内置识图，无需配置：本地解码 + 像素分析判断图像类型，Windows 自带 OCR 离线读出图中文字，本软件生成的图还会回查生成历史拿到提示词与主体。这些文字事实交给当前主模型理解并回答，所以纯文本主模型也能识图。下面只在需要更高精度（例如辨认照片里的具体物体）时才用得上。':
+    'Vision is built in and needs no setup: local decoding + pixel analysis classify the image, Windows offline OCR reads the text, and images generated here are matched against their prompt and subject in image history. Those text facts go to the current chat model, so even a text-only model can understand images. The controls below only matter when you want higher accuracy, e.g. naming objects in photos.',
+  '没有指定多模态模型时，识图完全由软件在本机完成；如果以后想提升照片识别精度，可以接入一个多模态模型再在这里选。':
+    'With no multimodal model selected, vision runs entirely on this machine. Add one later and pick it here if you want better photo recognition.',
+  '打开后，每次出图都会再用本机识图核对一遍画面（叠加你选的多模态模型描述），主模型就能据此确认画出来的是什么，而不是回「我无法确认」。':
+    'When on, every generated image is checked with on-device vision (plus your optional multimodal model), so the chat model can confirm what was drawn instead of replying "I can\'t verify".',
+  '没有手动指定时，会自动用第一个标了「支持图片」的模型作为增强；不指定也完全不影响本机识图。':
+    'Without a manual choice, the first model tagged "vision" is used as a boost; leaving it unset does not affect on-device vision at all.',
 
   /* ---------------- 时间与时长（src/lib/format.ts） */
   刚刚: 'just now',

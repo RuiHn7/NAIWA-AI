@@ -468,16 +468,19 @@ export function ProvidersSection() {
         </button>
       </div>
 
-      {/* 底部：识图（视觉）模型 —— 贴图识图、出图后核对画面都靠它，和对话主模型完全解耦 */}
-      <Card title={t('识图模型（视觉）')} sub={t('和对话主模型解耦')}>
+      {/* 底部：识图 —— 默认走软件内置的本机识图，下面只是可选的精度增强 */}
+      <Card title={t('识图（可选精度增强）')} sub={t('默认用软件内置的本机识图')}>
+        <div className="setting-hint" style={{ textAlign: 'left', marginBottom: 12 }}>
+          {t('软件内置识图，无需配置：本地解码 + 像素分析判断图像类型，Windows 自带 OCR 离线读出图中文字，本软件生成的图还会回查生成历史拿到提示词与主体。这些文字事实交给当前主模型理解并回答，所以纯文本主模型也能识图。下面只在需要更高精度（例如辨认照片里的具体物体）时才用得上。')}
+        </div>
         {(() => {
           const usable = providers.filter(p => p.enabled && p.hasKey && p.models.length > 0);
           if (!usable.length) {
             return (
               <Empty
                 icon="image"
-                title={t('还没有可用的接入项')}
-                desc={t('先在上面接入一个带视觉模型的服务（如 gpt-4o、claude-sonnet、gemini、qwen-vl），这里才能选识图模型。')}
+                title={t('本机识图已就绪')}
+                desc={t('没有指定多模态模型时，识图完全由软件在本机完成；如果以后想提升照片识别精度，可以接入一个多模态模型再在这里选。')}
               />
             );
           }
@@ -523,11 +526,11 @@ export function ProvidersSection() {
                 />
               </Row>
               <div className="setting-hint" style={{ textAlign: 'left', marginTop: 2 }}>
-                {t('打开后，每次 image_gen 出图都会把图交给上面的视觉模型描述一遍，主模型就能据此确认画面内容，而不是回「我无法确认」。')}
+                {t('打开后，每次出图都会再用本机识图核对一遍画面（叠加你选的多模态模型描述），主模型就能据此确认画出来的是什么，而不是回「我无法确认」。')}
                 {!pickedProvider && (
                   <>
                     <br />
-                    {t('没手动指定时，自动用第一个标了「支持图片」的模型；都没有标记就把模型名填到上面的下拉里。')}
+                    {t('没有手动指定时，会自动用第一个标了「支持图片」的模型作为增强；不指定也完全不影响本机识图。')}
                   </>
                 )}
               </div>

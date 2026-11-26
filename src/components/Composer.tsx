@@ -371,12 +371,8 @@ export function Composer() {
     return null;
   })();
 
+  /** 识图面板：本机识图始终可用，所以不再因为没有接入项就把人赶去设置页 */
   const openVision = (el: HTMLElement) => {
-    if (!providers.some(p => p.enabled && p.models.length > 0)) {
-      toast(t('还没有可用模型，先去接入一个'), 'warn');
-      openSettings('providers');
-      return;
-    }
     setKind('vision');
     open(el, 'right');
   };
@@ -385,11 +381,11 @@ export function Composer() {
   const pickVision = (picked: { providerId: string; modelId: string } | null) => {
     if (!picked) {
       void saveSettings({ visionProviderId: '', visionModelId: '' });
-      toast(t('识图模型：自动挑选'), 'ok');
+      toast(t('已回到本机识图（默认）'), 'ok');
       return;
     }
     void saveSettings({ visionProviderId: picked.providerId, visionModelId: picked.modelId });
-    toast(t('识图模型已切换'), 'ok');
+    toast(t('已启用多模态精度增强'), 'ok');
   };
 
   const openModel = (el: HTMLElement) => {
@@ -526,21 +522,21 @@ export function Composer() {
               </span>
             )}
 
-            {/* 识图（视觉）模型：和主模型解耦，用户贴图 / 出图后回看都靠它 */}
+            {/* 识图：软件内置本机识图；下面那个多模态模型只是可选的精度增强 */}
             <button
               type="button"
               className="pill pill-vision"
-              data-tone={visionTarget ? (visionTarget.manual ? 'manual' : 'auto') : 'off'}
+              data-tone={visionTarget ? (visionTarget.manual ? 'manual' : 'auto') : 'local'}
               title={
                 visionTarget
-                  ? `${t('识图模型')}：${visionTarget.providerLabel} · ${visionTarget.modelLabel}\n${visionTarget.manual ? t('已手动指定') : t('自动挑选')}\n${t('点一下可以换一个支持图片输入的模型')}`
-                  : t('还没有带视觉能力的模型，点这里去接一个')
+                  ? `${t('本机识图已就绪')} + ${visionTarget.providerLabel} · ${visionTarget.modelLabel}（${visionTarget.manual ? t('已手动指定') : t('自动挑选')}）\n${t('点一下可以换一个多模态模型（可选）')}`
+                  : `${t('本机识图已就绪')}：${t('软件内置解码、像素分析、离线 OCR 与生成历史反查，不需要任何配置')}\n${t('点这里可选接入一个多模态模型，提升照片里具体物体的识别精度')}`
               }
-              aria-label={t('识图模型')}
+              aria-label={t('识图')}
               onClick={e => openVision(e.currentTarget)}
             >
               <Icon name="image" size={12} />
-              <span className="pill-label">{visionTarget ? visionTarget.modelLabel : t('识图')}</span>
+              <span className="pill-label">{visionTarget ? visionTarget.modelLabel : t('本机识图')}</span>
             </button>
 
             {/* 余额：贴右、在模型按钮左边 */}
@@ -737,23 +733,23 @@ export function Composer() {
             </>
           )}
 
-          {/* 识图模型面板：显式指定哪个模型的「眼睛」来读用户贴的图 / 刚出的图 */}
+          {/* 识图面板：本机识图是默认能力；下面列出的多模态模型只是可选精度增强 */}
           {kind === 'vision' && (
             <>
-              <MenuLabel>{t('识图模型')}</MenuLabel>
+              <MenuLabel>{t('识图')}</MenuLabel>
               <div className="menu-note">
-                {t('和对话主模型解耦：主模型是纯文本也能看图，靠这里选的模型来读。')}
+                {t('软件内置本机识图已就绪：解码、像素分析、Windows 离线 OCR、生成历史反查，不需要任何配置。下面列出的多模态模型只是可选的精度增强 —— 指定后会在识图结果上再叠加一段画面描述。')}
               </div>
               <MenuItem
                 icon={<Icon name="spark" size={14} />}
                 picked={!visionTarget?.manual}
-                hint={t('自动')}
+                hint={t('默认')}
                 onClick={() => {
                   close();
                   pickVision(null);
                 }}
               >
-                {t('自动挑选')}
+                {t('本机识图（默认，无需配置）')}
               </MenuItem>
               <MenuSep />
               <div className="menu-scroll">

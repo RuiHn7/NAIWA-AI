@@ -1,25 +1,36 @@
 /* ============================================================================
- * desktop/agent/vision.ts —— 识图：把图片交给「接入项里支持图片输入的模型」读
- * 主模型是纯文本（DeepSeek 等）也没关系：识图走的是另一个有视觉能力的接入项，
- * 与当前会话用的主模型解耦。找不到视觉模型时给出能照着改的提示。
+ * desktop/agent/vision.ts —— 识图（软件内置能力，主模型是纯文本也能用）
+ *
+ * 主路径永远是**本机识图**：
+ *   · 回查图片生成历史（本软件生成的图知道当时的提示词与主体）
+ *   · 像素分析（尺寸 / 明暗 / 主色 / 版面）
+ *   · Windows 自带 OCR 离线读出图中文字
+ *   三者合成一段「识图报告」，交给当前会话里已经在跑的主模型理解并回答。
+ *   全程不联网、不需要 Key、不需要用户配置任何外部视觉模型。
+ *
+ * 可选增强：若用户在设置里额外指定了多模态模型，会在本机识图结果之上
+ * 再叠加一段该模型的画面描述；外部调用失败也不影响本机识图结果。
  *
  * 三种来源都收：
  *   · 本地绝对路径（用户贴图落盘后的附件）
  *   · http(s) 图片链接（工具入参 image_url 直接给链接）
  *   · data URL（粘贴的截图 / 上游直接给 base64）
- * 统一收敛成 bytes + mime 再喂给视觉模型，避免 anthropic / gemini 分支
- * 把非 data URL 的字符串当 base64 解出来是坏数据。
+ * 统一收敛成 bytes + mime，避免 anthropic / gemini 分支把非 data URL 的
+ * 字符串当 base64 解出来是坏数据。
  * ==========================================================================*/
 
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { app, nativeImage } from 'electron';
 import type { ProviderKind } from '@shared/types';
 import type { LlmMessage } from '../llm/types';
 import { streamFor } from '../llm/registry';
 import { getProviderApiKey, listProviders } from '../store/providers';
 import { getChat } from '../store/chats';
 import { getSettings } from '../store/settings';
+import { listImages } from '../store/images';
+import { detectSubject } from './scene';
 
 const MIME_BY_EXT: Record<string, string> = {
   '.png': 'image/png',
@@ -51,7 +62,7 @@ export function latestImageAttachment(chatId: string): string | null {
 
 export interface UnderstandResult {
   ok: boolean;
-  /** 识图模型给出的文字描述 */
+  /** 识图得到的文字报告（本机识图为主，可叠加可选多模态模型的描述） */
   text?: string;
   error?: string;
   /** 干活的接入项与模型，便于向用户说明 */
@@ -189,20 +200,123 @@ export function currentVisionTarget(): { providerId: string; providerLabel: stri
   return { providerId: matched?.id ?? '', providerLabel: hit.label, modelId: hit.modelId };
 }
 
-/** 把图片字节交给「启用中、有 Key、模型列表里有视觉模型」的接入项读 */
-export async function understandImageBytes(input: { bytes: Buffer; mime: string; query: string }): Promise<UnderstandResult> {
+/**
+ * 软件内置的本机识图 —— 主路径，任何时候都可用，不需要任何外部服务。
+ * 把「生成历史 + 像素统计 + 离线 OCR」合成一段识图报告，交给主模型理解并回答。
+ * 这三样都不联网、不需要 Key，属于软件自身能力。
+ */
+async function localUnderstand(input: { bytes: Buffer; mime: string; query: string; sourcePath?: string }): Promise<UnderstandResult> {
+  const { perceive, assessImage, assessmentToText } = await import('./perceive');
+  const { ocrImageFile } = await import('./ocr');
+
+  // 1) 本软件生成的图：历史里有提示词，直接说清「这是什么」
+  const source = lookupGenerated(input.sourcePath);
+  // 2) 像素层：色彩 / 明暗 / 构图
+  const percept = perceive({ bytes: input.bytes });
+
+  // 3) 文字层：Windows 自带 OCR（离线）。优先用原始文件，字节来源则落成临时 PNG。
+  let ocrTarget: string | null = null;
+  if (input.sourcePath && /^file:\/\//i.test(input.sourcePath)) {
+    const local = decodeURIComponent(input.sourcePath.replace(/^file:\/\//i, ''));
+    if (fs.existsSync(local)) ocrTarget = local;
+  } else if (input.sourcePath && !/^https?:\/\//i.test(input.sourcePath) && fs.existsSync(input.sourcePath)) {
+    ocrTarget = input.sourcePath;
+  }
+  const tempFiles: string[] = [];
+  if (!ocrTarget) {
+    try {
+      const img = nativeImage.createFromBuffer(input.bytes);
+      if (!img.isEmpty()) {
+        const tmp = path.join(app.getPath('temp'), `naiwa-ocr-${Date.now()}.png`);
+        fs.writeFileSync(tmp, img.toPNG());
+        ocrTarget = tmp;
+        tempFiles.push(tmp);
+      }
+    } catch {
+      /* 解不出图就不 OCR */
+    }
+  }
+
+  let ocrText = '';
+  let ocrLines = 0;
+  let ocrAvailable = false;
+  let ocrNote = '';
+  if (ocrTarget) {
+    const ocr = await ocrImageFile(ocrTarget);
+    if (ocr.ok) {
+      ocrAvailable = true;
+      ocrText = ocr.text;
+      ocrLines = ocr.lines;
+    } else {
+      ocrNote = `本机 OCR 不可用：${ocr.error ?? '未知原因'}`;
+    }
+  }
+  for (const file of tempFiles) void fsp.unlink(file).catch(() => {});
+
+  if (!percept && !source && !ocrText) {
+    return { ok: false, error: `本机解不开这张图（${input.mime}）。可能是格式不支持或文件损坏；换一张 PNG / JPG 再试。` };
+  }
+
+  const assessment = assessImage({ percept, ocrText, ocrLines, ocrAvailable, source, query: input.query });
+  let text = assessmentToText(assessment);
+  if (ocrNote) text += `\n\n（${ocrNote}；其余识图结果不受影响。）`;
+  return {
+    ok: true,
+    text,
+    provider: '本机',
+    model: source ? '图片历史 + 像素 + OCR' : '像素 + OCR',
+  };
+}
+
+/** 这张图是不是本软件生成的？按文件路径回查图片历史，拿到当时的提示词 */
+function lookupGenerated(sourcePath?: string): string | null {
+  if (!sourcePath || /^https?:\/\//i.test(sourcePath)) return null;
+  const raw = /^file:\/\//i.test(sourcePath) ? decodeURIComponent(sourcePath.replace(/^file:\/\//i, '')) : sourcePath;
+  let target = '';
+  try {
+    target = path.resolve(raw);
+  } catch {
+    return null;
+  }
+  for (const rec of listImages()) {
+    const hit = rec.files.find(f => {
+      try {
+        return path.resolve(f.path) === target;
+      } catch {
+        return false;
+      }
+    });
+    if (!hit) continue;
+    const subject = detectSubject(rec.prompt);
+    const when = new Date(rec.createdAt).toLocaleString('zh-CN', { hour12: false });
+    const via = rec.providerId === 'builtin' ? '内置渲染' : rec.providerId;
+    const lines = [
+      `来源：这是 NAI WA 在 ${when} 自己生成的图（${via} · ${rec.size}）。`,
+      `当时的提示词：「${rec.prompt}」`,
+    ];
+    if (subject.kind !== 'none') {
+      lines.push(
+        `按提示词，画面主体应是「${subject.label}」${subject.colorName ? `（${subject.colorName}）` : ''}；内置渲染画的是程序化插画，不是照片。`,
+      );
+    } else {
+      lines.push('提示词里没有明确主体，画面是风景 / 氛围底图。');
+    }
+    return lines.join('\n');
+  }
+  return null;
+}
+
+/**
+ * 识图主入口：本机识图**永远先跑并保留**；用户在设置里额外指定了多模态模型时，
+ * 再在其之上叠加一段该模型的画面描述作为精度增强。
+ * 外部模型不可用或调用失败都不影响本机结果 —— 软件始终有识图能力。
+ */
+export async function understandImageBytes(input: { bytes: Buffer; mime: string; query: string; sourcePath?: string }): Promise<UnderstandResult> {
   const { bytes, mime, query } = input;
+  const local = await localUnderstand({ bytes, mime, query, sourcePath: input.sourcePath });
 
   const hit = pickVisionTarget();
-  if (!hit) {
-    // 没有外部视觉模型也不摆烂：退回本机像素分析，色彩 / 明暗 / 构图照样能说清
-    const { perceive, perceptToText } = await import('./perceive');
-    const percept = perceive({ bytes });
-    if (!percept) {
-      return { ok: false, error: `本机解不开这张图（${mime}）。可能是格式不支持或文件损坏；换一张 PNG / JPG 再试。` };
-    }
-    return { ok: true, text: perceptToText(percept, query), provider: '本机', model: '像素分析' };
-  }
+  if (!hit) return local;
 
   const dataUrl = `data:${mime};base64,${bytes.toString('base64')}`;
   const messages: LlmMessage[] = [
@@ -232,42 +346,51 @@ export async function understandImageBytes(input: { bytes: Buffer; mime: string;
       else if (event.type === 'error') throw new Error(event.message);
     }
   } catch (err) {
-    return { ok: false, error: (err as Error).message, provider: hit.label, model: hit.modelId };
+    if (!local.ok) return { ok: false, error: (err as Error).message, provider: hit.label, model: hit.modelId };
+    return {
+      ...local,
+      text: `${local.text}\n\n（可选的多模态模型调用失败：${(err as Error).message}；以上本机识图结果不受影响。）`,
+    };
   }
 
-  if (!text.trim()) {
-    return { ok: false, error: '视觉模型没有返回任何内容。', provider: hit.label, model: hit.modelId };
-  }
-  return { ok: true, text: text.trim(), provider: hit.label, model: hit.modelId };
+  if (!text.trim()) return local;
+  const base = local.ok ? local.text ?? '' : '';
+  return {
+    ok: true,
+    text: `${base}\n\n【可选增强：${hit.label} · ${hit.modelId} 的画面描述】\n${text.trim()}`.trim(),
+    provider: local.ok ? `本机 + ${hit.label}` : hit.label,
+    model: local.ok ? `本机识图 + ${hit.modelId}` : hit.modelId,
+  };
 }
 
 /** 本地路径识图（会话附件走这里） */
 export async function understandImage(input: { imagePath: string; query: string }): Promise<UnderstandResult> {
   const loaded = await loadImageSource(input.imagePath);
   if (!loaded.ok) return { ok: false, error: loaded.error };
-  return understandImageBytes({ bytes: loaded.image.bytes, mime: loaded.image.mime, query: input.query });
+  return understandImageBytes({ bytes: loaded.image.bytes, mime: loaded.image.mime, query: input.query, sourcePath: input.imagePath });
 }
 
 /** 任意来源识图（image_url：本地路径 / http(s) / data URL） */
 export async function understandImageSource(input: { imageUrl: string; query: string }): Promise<UnderstandResult> {
   const loaded = await loadImageSource(input.imageUrl);
   if (!loaded.ok) return { ok: false, error: loaded.error };
-  return understandImageBytes({ bytes: loaded.image.bytes, mime: loaded.image.mime, query: input.query });
+  return understandImageBytes({ bytes: loaded.image.bytes, mime: loaded.image.mime, query: input.query, sourcePath: input.imageUrl });
 }
 
-/** 当前有没有可用视觉模型（UI / 工具层用来决定是否提示） */
+/** 有没有额外的多模态模型可用于「精度增强」（本机识图不依赖它） */
 export function hasVisionTarget(): boolean {
   return pickVisionTarget() !== null;
 }
 
-/** 当前视觉模型的名字，例如「OpenAI · gpt-4o」；没有就返回 null */
+/** 可选的增强模型名字，例如「OpenAI · gpt-4o」；没有就返回 null */
 export function visionTargetLabel(): string | null {
   const hit = pickVisionTarget();
   return hit ? `${hit.label} · ${hit.modelId}` : null;
 }
 
 /**
- * 出图之后的「视觉核对」：把刚生成的图交给视觉模型，客观描述画面上到底有什么。
+ * 出图之后的「视觉核对」：用软件内置的本机识图（可叠加可选的多模态模型）
+ * 客观描述画面上到底有什么。
  * 存在的意义 —— 主模型（DeepSeek 等纯文本）拿不到像素，只能靠这段文字确认
  * 「用户要的主体到底画出来没有」，而不是对着图片路径瞎猜或说「我无法确认」。
  */

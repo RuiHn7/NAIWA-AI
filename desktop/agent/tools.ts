@@ -58,9 +58,9 @@ export function artifactsDirOf(ctx: { chatFolder?: string | null; workspace?: Wo
   return path.join(scratchDir(), 'artifacts');
 }
 
-/** 大结果落盘：返回文件路径，模型只看到摘要 */
-async function spill(text: string, name: string, ctx: ToolContext): Promise<{ text: string; filePath?: string }> {
-  if (text.length <= MAX_INLINE) return { text };
+/** 大结果落盘：返回文件路径，模型只看到摘要。limit 可调高，避免识图报告里的 OCR 全文被截断 */
+async function spill(text: string, name: string, ctx: ToolContext, limit = MAX_INLINE): Promise<{ text: string; filePath?: string }> {
+  if (text.length <= limit) return { text };
   const dir = artifactsDirOf(ctx);
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `${name}.txt`);
@@ -282,14 +282,14 @@ function builtinHint(theme?: string, subject?: string): string | null {
   if (subject) {
     return [
       `内置渲染说明：已按提示词画出主体「${subject}」，风格是程序化插画（几何 + 光影 + 接触阴影），不是照片级写实。`,
-      '向用户说明这一点即可；要照片级质感得接真实出图后端。',
+      '如实向用户说明这一点即可；不要说「无法确认画面内容」。',
     ].join('');
   }
   const label = BUILTIN_THEME_HINT[theme] ?? theme;
   return [
     `内置渲染说明：画面是「${label}」模板，只有天空 / 山 / 水 / 柔光这些通用元素，`,
     '**没有认出提示词里的具体主体**（人、动物、产品、建筑细节、文字都画不出来）。',
-    '所以要如实告诉用户这是一张模板底图；想画具体主体，把主体写得更直白（如「一张桌子」「一只猫」）再试，或接入真实出图后端。',
+    '所以要如实告诉用户这是一张模板底图；想画具体主体，把主体写得更直白（如「一张桌子」「一只猫」）再调用一次即可。',
   ].join('');
 }
 
@@ -297,28 +297,21 @@ function builtinHint(theme?: string, subject?: string): string | null {
 
 /**
  * 图生成完，主模型只能拿到一个文件路径 —— 纯文本模型根本不知道画面长什么样，
- * 于是就会回「我无法确认这张图的内容」。这里在出图之后自动调一次视觉模型，
- * 把客观描述拼进 observation，主模型才有依据向用户确认「画出来的是什么」。
- * 关掉「设置 → 接入模型 → 出图后自动核对」或没有视觉模型时，给一句明确的说明，
- * 让模型如实交代「没核对过」，而不是编造画面。
+ * 于是就会回「我无法确认这张图的内容」。这里在出图之后自动用**软件内置的本机识图**
+ * 读一遍刚生成的图（设置了多模态模型时再叠加其描述），把画面描述拼进 observation，
+ * 主模型才有依据向用户确认「画出来的是什么」。不需要任何外部服务。
  */
 async function visualCheck(files: string[], prompt: string, knownScene?: string): Promise<string[]> {
   if (!files.length) return [];
-  // 内置渲染知道自己画了什么：直接自述，不依赖任何外部视觉模型
+  // 内置渲染知道自己画了什么：直接自述，不依赖任何外部模型
   if (knownScene) {
-    return ['画面自述（内置渲染，本机生成，无需视觉模型）：', knownScene];
+    return ['画面自述（内置渲染，本机生成）：', knownScene];
   }
   if (getSettings().visionAutoCheck === false) return [];
-  const { describeGeneratedImage, hasVisionTarget, visionTargetLabel } = await import('./vision');
-  if (!hasVisionTarget()) {
-    return [
-      '画面核对：没有外部视觉模型，这张图也不是内置渲染画的，所以没有画面信息。',
-      '不要描述这张图的具体内容（你并没有看到它），只把图片路径给用户；需要识别内容时用 image_understand（本机像素分析或已接入的视觉模型）。',
-    ];
-  }
+  const { describeGeneratedImage } = await import('./vision');
   const result = await describeGeneratedImage({ imagePath: files[0], prompt });
   if (!result.ok) {
-    return [`画面核对失败（${visionTargetLabel() ?? '视觉模型'}）：${result.error}`, '不要再声称自己看过这张图。'];
+    return [`画面核对失败（本机识图）：${result.error}`, '不要声称自己看过这张图，只把图片路径给用户。'];
   }
   return [`画面核对（${result.provider} · ${result.model}）：`, result.text ?? ''];
 }
@@ -900,7 +893,7 @@ export const TOOLS: ToolDef[] = [
     name: 'image_understand',
     label: '图片解析',
     description:
-      '看懂一张图片：描述画面内容、提取图中所有文字、识别报错截图、解读界面信息。你自己看不见图片，图片内容全部来自本工具返回的文字。用户上传图片、截图、照片并要求看图时，必须先调用本工具，拿到结果后再回答；禁止在没有调用的情况下编造图片内容。识图由独立的视觉服务完成，与当前主模型解耦，纯文本模型也能用。',
+      '看懂一张图片：描述画面内容、提取图中所有文字、识别报错截图、解读界面信息、判断「这是什么」。识图是软件内置能力：本机解码 + 像素分析判断图像类型与版面，Windows 自带 OCR 离线读出图中文字，本软件生成的图还会回查生成历史拿到提示词与主体，返回一段可直接依据的识图报告，不需要用户配置任何视觉模型。用户上传图片并要求看图时必须先调用本工具，拿到结果后再回答；禁止在没有调用的情况下编造图片内容，也禁止说「看不了图 / 需要接视觉模型」。',
     parameters: {
       type: 'object',
       properties: {
@@ -930,7 +923,8 @@ export const TOOLS: ToolDef[] = [
       const result = await understandImageSource({ imageUrl: source, query });
       if (!result.ok) return { text: `识图失败：${result.error}` };
       const header = `识图结果（${result.provider} · ${result.model}）：\n`;
-      return spill(header + (result.text ?? ''), `vision-${Date.now()}`, ctx);
+      // 识图报告里带 OCR 全文，放宽内联上限，保证主模型能看到图里的文字
+      return spill(header + (result.text ?? ''), `vision-${Date.now()}`, ctx, 9000);
     },
   },
   {
@@ -983,7 +977,7 @@ export const TOOLS: ToolDef[] = [
     label: '识别图片',
     hidden: true,
     description:
-      '看懂一张图片：读截图里的信息、提取图中文字、识别报错、分析画面内容。会自动选一个支持图片输入的接入模型（与当前主模型解耦，纯文本模型也能用）。用户贴了图片并询问与图片相关的问题时必须先调用本工具。',
+      '看懂一张图片：读截图里的信息、提取图中文字、识别报错、分析画面内容。识图由软件内置的本机识图完成（解码 + 像素分析 + 离线 OCR + 生成历史反查），不需要用户接任何外部模型。用户贴了图片并询问与图片相关的问题时必须先调用本工具。',
     parameters: {
       type: 'object',
       properties: {
@@ -1015,7 +1009,8 @@ export const TOOLS: ToolDef[] = [
         return { text: `识图失败：${result.error}` };
       }
       const header = `识图结果（${result.provider} · ${result.model}）：\n`;
-      return spill(header + (result.text ?? ''), `vision-${Date.now()}`, ctx);
+      // 识图报告里带 OCR 全文，放宽内联上限，保证主模型能看到图里的文字
+      return spill(header + (result.text ?? ''), `vision-${Date.now()}`, ctx, 9000);
     },
   },
 ];

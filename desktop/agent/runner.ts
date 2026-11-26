@@ -91,7 +91,7 @@ function historyToLlm(chat: Chat, allowImages: boolean): LlmMessage[] {
     if (m.error && !m.content) continue;
     if (m.role === 'user') {
       const parts: LlmPart[] = [];
-      /** 纯文本模型不能收图片 part：把附件折成一行文字，模型才知道「有图，去调 image_understand」 */
+      /** 纯文本模型不能收图片 part：把附件折成一行文字，模型才知道「有图，去调 image_understand 拿本机识图报告」 */
       const skipped: string[] = [];
       for (const a of m.attachments ?? []) {
         if (a.kind !== 'image' || !a.path || !fs.existsSync(a.path)) continue;
@@ -108,7 +108,7 @@ function historyToLlm(chat: Chat, allowImages: boolean): LlmMessage[] {
       }
       let text = m.content;
       if (skipped.length) {
-        text += `\n\n[图片附件：${skipped.join('；')}。当前主模型不支持图片输入，图片没有内联发送；需要看画面内容请调用 image_understand。]`;
+        text += `\n\n[图片附件：${skipped.join('；')}。图片像素没有内联发送；软件内置本机识图，调用 image_understand 即可拿到图里的文字与画面报告，基于报告回答，不要凭空猜测。]`;
       }
       parts.push({ type: 'text', text });
       out.push({ role: 'user', content: parts });
