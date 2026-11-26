@@ -1,0 +1,54 @@
+{
+  "appId": "com.naiwa.desktop",
+  "productName": "NAI WA",
+  "copyright": "Copyright © 2026 NAI WA",
+  "directories": {
+    "output": "release",
+    "buildResources": "build"
+  },
+  "files": [
+    "dist/**/*",
+    "dist-electron/**/*",
+    "package.json",
+    "build/icon.png",
+    "build/icon.ico"
+  ],
+  "asar": true,
+  "win": {
+    "target": [
+      { "target": "nsis", "arch": ["x64"] }
+    ],
+    "icon": "build/icon.ico",
+    "artifactName": "NAI-WA-Setup-${version}.${ext}"
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
+    "allowElevation": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "NAI WA",
+    "uninstallDisplayName": "NAI WA ${version}",
+    "deleteAppDataOnUninstall": false,
+    "license": "build/license.txt",
+    "installerIcon": "build/icon.ico",
+    "uninstallerIcon": "build/icon.ico",
+    "installerHeaderIcon": "build/icon.ico"
+  },
+  "mac": {
+    "target": [{ "target": "dmg", "arch": ["x64", "arm64"] }],
+    "category": "public.app-category.productivity",
+    "icon": "build/icon.icns",
+    "hardenedRuntime": true,
+    "artifactName": "NAI-WA-${version}-${arch}.${ext}"
+  },
+  "linux": {
+    "target": ["AppImage", "deb"],
+    "category": "Development",
+    "icon": "build/icons",
+    "maintainer": "NAI WA <dev@naiwa.local>",
+    "artifactName": "NAI-WA-${version}-${arch}.${ext}"
+  },
+  "publish": null
+}

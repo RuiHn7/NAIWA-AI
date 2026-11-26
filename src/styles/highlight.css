@@ -1,0 +1,127 @@
+/* ============================================================================
+ * src/styles/highlight.css —— highlight.js 主题
+ * 深色：青蓝主调（与强调色同源），关键字紫、字符串绿、数字橙。
+ * 亮色：白底可读的深色变体。
+ * ==========================================================================*/
+
+.hljs {
+  color: var(--ink-1);
+  background: transparent;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: var(--ink-4);
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-doctag {
+  color: #c792ea;
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-addition,
+.hljs-attribute,
+.hljs-meta .hljs-string {
+  color: #a6e3a1;
+}
+
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-link,
+.hljs-selector-attr,
+.hljs-selector-pseudo {
+  color: #fab387;
+}
+
+.hljs-title,
+.hljs-section,
+.hljs-title.class_,
+.hljs-title.function_ {
+  color: #89b4fa;
+}
+
+.hljs-built_in,
+.hljs-type,
+.hljs-class .hljs-title {
+  color: #7fd4ff;
+}
+
+.hljs-variable,
+.hljs-template-variable,
+.hljs-attr,
+.hljs-selector-class,
+.hljs-selector-id {
+  color: #f5c2e7;
+}
+
+.hljs-meta,
+.hljs-deletion {
+  color: #ff7a85;
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 600;
+}
+
+/* --------------------------------------------------------------- 亮色覆盖 */
+
+[data-theme='light'] .hljs {
+  color: var(--ink-1);
+}
+
+[data-theme='light'] .hljs-comment,
+[data-theme='light'] .hljs-quote {
+  color: var(--ink-4);
+}
+
+[data-theme='light'] .hljs-keyword,
+[data-theme='light'] .hljs-selector-tag,
+[data-theme='light'] .hljs-literal,
+[data-theme='light'] .hljs-doctag {
+  color: #8839ef;
+}
+
+[data-theme='light'] .hljs-string,
+[data-theme='light'] .hljs-regexp,
+[data-theme='light'] .hljs-addition,
+[data-theme='light'] .hljs-attribute {
+  color: #1f8a4c;
+}
+
+[data-theme='light'] .hljs-number,
+[data-theme='light'] .hljs-symbol,
+[data-theme='light'] .hljs-bullet {
+  color: #b35c00;
+}
+
+[data-theme='light'] .hljs-title,
+[data-theme='light'] .hljs-section,
+[data-theme='light'] .hljs-title.function_ {
+  color: #0b60a8;
+}
+
+[data-theme='light'] .hljs-built_in,
+[data-theme='light'] .hljs-type {
+  color: #0b78c4;
+}
+
+[data-theme='light'] .hljs-variable,
+[data-theme='light'] .hljs-template-variable,
+[data-theme='light'] .hljs-attr {
+  color: #b3196b;
+}
+
+[data-theme='light'] .hljs-meta,
+[data-theme='light'] .hljs-deletion {
+  color: #c5283d;
+}

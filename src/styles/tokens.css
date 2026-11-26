@@ -1,0 +1,123 @@
+/* ============================================================================
+ * src/styles/tokens.css —— 设计变量
+ *
+ *   · 深空蓝画布 + 青色强调色，靠细边和细微层次区区块
+ *   · 圆角偏大（6/8/12/16），留白充足，正文 14px
+ *   · 深色 / 浅色两套完整取值，跟随系统由 data-theme 决定（见 public/theme-boot.js）
+ * ==========================================================================*/
+
+:root {
+  --font-sans: Inter, 'Inter var', -apple-system, 'Segoe UI', 'Microsoft YaHei UI',
+    'PingFang SC', system-ui, sans-serif;
+  --font-mono: 'SF Mono', 'Cascadia Code', Consolas, 'JetBrains Mono', ui-monospace, monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --dur-fast: 0.14s;
+  --dur: 0.22s;
+  --dur-slow: 0.32s;
+
+  --sidebar-w: 268px;
+  --right-w: 340px;
+  --col-max: 780px;
+  --topbar-h: 52px;
+
+  --z-sidebar: 20;
+  --z-topbar: 30;
+  --z-right: 25;
+  --z-overlay: 80;
+  --z-modal: 90;
+  --z-toast: 120;
+}
+
+/* ------------------------------------------------------------------ 暗色 */
+
+[data-theme='dark'] {
+  color-scheme: dark;
+
+  --bg-0: #060a10;
+  --bg-1: #0a0f17;
+  --bg-2: #0e141d;
+  --bg-3: #131b26;
+
+  --surface: rgba(255, 255, 255, 0.035);
+  --surface-hover: rgba(255, 255, 255, 0.065);
+  --surface-active: rgba(127, 212, 255, 0.12);
+  --surface-sunken: #070c13;
+
+  --line: #16202c;
+  --line-strong: #223040;
+
+  --ink-1: #edf4ff;
+  --ink-2: #b9c6d8;
+  --ink-3: #8494a8;
+  --ink-4: #62707f;
+
+  --accent: #7fd4ff;
+  --accent-ink: #04202e;
+  --accent-soft: rgba(127, 212, 255, 0.12);
+  --accent-line: rgba(127, 212, 255, 0.38);
+
+  --ok: #6ee7a8;
+  --warn: #f2c15c;
+  --danger: #ff7a85;
+
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 10px 30px -12px rgba(0, 0, 0, 0.75), 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-3: 0 22px 60px -18px rgba(0, 0, 0, 0.8);
+
+  --bubble-user: #16222f;
+  --bubble-user-line: #22303f;
+  --bubble-ai: transparent;
+
+  --code-bg: #070c13;
+  --scrim: rgba(4, 7, 11, 0.66);
+}
+
+/* ------------------------------------------------------------------ 亮色 */
+
+[data-theme='light'] {
+  color-scheme: light;
+
+  --bg-0: #f4f7fc;
+  --bg-1: #ffffff;
+  --bg-2: #ffffff;
+  --bg-3: #eef3fa;
+
+  --surface: rgba(13, 23, 37, 0.032);
+  --surface-hover: rgba(13, 23, 37, 0.062);
+  --surface-active: rgba(11, 120, 196, 0.1);
+  --surface-sunken: #edf2f9;
+
+  --line: #e2e9f2;
+  --line-strong: #cfdae8;
+
+  --ink-1: #0d1725;
+  --ink-2: #33465c;
+  --ink-3: #5b6f86;
+  --ink-4: #7c8ea3;
+
+  --accent: #0b78c4;
+  --accent-ink: #ffffff;
+  --accent-soft: rgba(11, 120, 196, 0.1);
+  --accent-line: rgba(11, 120, 196, 0.32);
+
+  --ok: #157f52;
+  --warn: #a56a00;
+  --danger: #c5283d;
+
+  --shadow-1: 0 1px 2px rgba(13, 23, 37, 0.07);
+  --shadow-2: 0 10px 28px -12px rgba(13, 23, 37, 0.22), 0 1px 2px rgba(13, 23, 37, 0.06);
+  --shadow-3: 0 22px 56px -18px rgba(13, 23, 37, 0.24);
+
+  --bubble-user: #e8f1fb;
+  --bubble-user-line: #cfe1f4;
+  --bubble-ai: transparent;
+
+  --code-bg: #f4f8fd;
+  --scrim: rgba(13, 23, 37, 0.26);
+}

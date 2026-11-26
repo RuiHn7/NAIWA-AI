@@ -1,0 +1,503 @@
+/* ============================================================================
+ * src/styles/composer.css —— 输入区、附件托盘、模型/思考选择、用量条
+ * ==========================================================================*/
+
+.composer-zone {
+  position: relative;
+  flex: none;
+  /* 贴住窗口底边（PRD：输入框整体往下靠到底） */
+  padding: 2px 0 4px;
+}
+
+.composer-wrap {
+  width: 100%;
+  max-width: var(--col-max);
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.composer {
+  position: relative;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-xl);
+  background: var(--bg-2);
+  box-shadow: var(--shadow-1);
+  transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
+}
+
+.composer:focus-within {
+  border-color: var(--accent-line);
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-2);
+}
+
+.composer[data-disabled='true'] {
+  opacity: 0.65;
+}
+
+.composer textarea {
+  display: block;
+  width: 100%;
+  min-height: 58px;
+  max-height: 42vh;
+  padding: 14px 15px 0;
+  border: 0;
+  background: none;
+  color: var(--ink-1);
+  font-size: 14.2px;
+  line-height: 1.6;
+  resize: none;
+  overflow-y: auto;
+}
+
+.composer textarea::placeholder {
+  color: var(--ink-4);
+}
+
+.composer textarea:focus {
+  outline: none;
+}
+
+.composer-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px 8px;
+}
+
+.composer-row .grow {
+  min-width: 6px;
+}
+
+/* ------------------------------------------------------------------ 胶囊 */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  transition: background var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast);
+}
+
+.pill:hover {
+  background: var(--surface-hover);
+  color: var(--ink-1);
+}
+
+.pill[data-open='true'] {
+  background: var(--surface-active);
+  color: var(--ink-1);
+  border-color: var(--accent-line);
+}
+
+.pill .pill-label {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pill .pill-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ok);
+  flex: none;
+}
+
+.pill-dot[data-tone='warn'] { background: var(--warn); }
+.pill-dot[data-tone='off'] { background: var(--ink-4); }
+.pill-dot[data-tone='accent'] { background: var(--accent); }
+
+/* 模型 + 思考强度合并按钮（PRD 三）：只一行，强度用细体分隔 */
+.pill-model {
+  border-color: var(--line);
+  background: var(--surface);
+}
+
+.pill-model:hover {
+  border-color: var(--line-strong);
+}
+
+.pill-model-name {
+  max-width: 132px;
+  font-weight: 520;
+  color: var(--ink-2);
+}
+
+.pill-strength {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  color: var(--ink-4);
+  padding-left: 6px;
+  border-left: 1px solid var(--line);
+}
+
+/* 权限徽标：审批为中性，完全访问为危险色 */
+.pill-perm[data-tone='normal'] {
+  border-color: var(--line);
+  background: var(--surface);
+}
+
+.pill-perm[data-tone='danger'] {
+  border-color: color-mix(in srgb, var(--danger) 42%, transparent);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+
+.pill-perm[data-tone='danger']:hover {
+  background: color-mix(in srgb, var(--danger) 18%, transparent);
+  color: var(--danger);
+}
+
+.pill[data-static='true'] {
+  cursor: default;
+}
+
+.pill[data-static='true']:hover {
+  background: none;
+  color: var(--ink-3);
+}
+
+/* 账户余额：模型按钮左边的只读小标签，查不到时整块不渲染 */
+.pill-balance {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ok) 9%, transparent);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ok);
+  white-space: nowrap;
+}
+
+.pill-balance svg {
+  opacity: 0.8;
+}
+
+/* ------------------------------------------------------------------ 发送按钮 */
+
+.send-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-ink);
+  transition: opacity var(--dur-fast), transform var(--dur-fast), background var(--dur-fast);
+}
+
+.send-btn:hover:not(:disabled) {
+  transform: scale(1.05);
+}
+
+.send-btn:disabled {
+  opacity: 0.32;
+  cursor: default;
+}
+
+.send-btn[data-mode='stop'] {
+  background: var(--ink-1);
+  color: var(--bg-0);
+}
+
+/* ------------------------------------------------------------------ 底部统计行 */
+
+.stat-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  max-width: var(--col-max);
+  margin: 0 auto;
+  /* 统计行就是输入区与底边之间的最后一条，下方几乎不留白 */
+  padding: 7px 24px 2px;
+  font-size: 11px;
+  color: var(--ink-4);
+}
+
+.stat-items {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.stat-cell {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.stat-value {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--ink-2);
+}
+
+.stat-label {
+  font-size: 10.5px;
+  color: var(--ink-4);
+}
+
+.stat-line[data-level='warn'] .stat-value {
+  color: var(--warn);
+}
+
+.stat-line[data-level='danger'] .stat-value {
+  color: var(--danger);
+}
+
+.stat-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+.usage-compress {
+  color: var(--accent);
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  white-space: nowrap;
+}
+
+.usage-compress:hover {
+  background: var(--accent-soft);
+}
+
+/* 上下文进度圆环 */
+.ctx-ring {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  padding: 1px 1px 1px 0;
+}
+
+.ctx-ring svg {
+  display: block;
+  overflow: visible;
+}
+
+.ctx-ring-bg {
+  stroke: var(--surface-sunken);
+}
+
+.ctx-ring-fg {
+  stroke: var(--accent);
+  transition: stroke-dashoffset var(--dur) var(--ease), stroke var(--dur);
+}
+
+/* 占比很小时给一段最小可见弧，否则圆环看起来是空的 */
+.ctx-ring[data-nonzero='true'] .ctx-ring-fg {
+  stroke-width: 2.6;
+}
+
+.ctx-ring[data-level='warn'] .ctx-ring-fg {
+  stroke: var(--warn);
+}
+
+.ctx-ring[data-level='danger'] .ctx-ring-fg {
+  stroke: var(--danger);
+}
+
+.ctx-percent {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  min-width: 26px;
+  text-align: right;
+}
+
+.ctx-ring[data-level='warn'] .ctx-percent {
+  color: var(--warn);
+}
+
+.ctx-ring[data-level='danger'] .ctx-percent {
+  color: var(--danger);
+}
+
+/* ------------------------------------------------------------------ 附件托盘 */
+
+.attach-tray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 0 22px 9px;
+}
+
+.attach-chip {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 220px;
+  padding: 5px 9px 5px 6px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+
+.attach-chip img {
+  width: 26px;
+  height: 26px;
+  object-fit: cover;
+  border-radius: 5px;
+  flex: none;
+}
+
+.attach-chip .attach-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attach-chip .attach-size {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-4);
+  flex: none;
+}
+
+.attach-remove {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  border-radius: 4px;
+  color: var(--ink-4);
+}
+
+.attach-remove:hover {
+  background: var(--surface-hover);
+  color: var(--danger);
+}
+
+/* ------------------------------------------------------------------ 拖拽遮罩 */
+
+.drop-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--bg-0) 78%, transparent);
+  backdrop-filter: blur(4px);
+  animation: fade-in var(--dur-fast) var(--ease);
+}
+
+.drop-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 38px 52px;
+  border: 2px dashed var(--accent-line);
+  border-radius: var(--radius-xl);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 560;
+}
+
+/* ------------------------------------------------------------------ 语音波形 */
+
+.voice-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 18px 8px;
+  min-height: 30px;
+}
+
+.voice-wave {
+  display: flex;
+  align-items: center;
+  gap: 2.5px;
+  height: 22px;
+}
+
+.voice-wave i {
+  display: block;
+  width: 2.5px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--accent);
+  animation: wave 1.05s ease-in-out infinite;
+}
+
+.voice-wave i:nth-child(odd) { animation-duration: 0.85s; }
+.voice-wave i:nth-child(3n) { animation-duration: 1.25s; }
+.voice-wave i:nth-child(4n) { animation-duration: 0.95s; }
+
+@keyframes wave {
+  0%, 100% { height: 4px; opacity: 0.55; }
+  50% { height: 20px; opacity: 1; }
+}
+
+.voice-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-stop {
+  font-size: 12px;
+  color: var(--danger);
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.voice-stop:hover {
+  background: var(--surface-hover);
+}
+
+/* ------------------------------------------------------------------ 窄屏 */
+
+@media (max-width: 900px) {
+  .composer-wrap {
+    padding: 0 12px;
+  }
+
+  .stat-line {
+    padding: 6px 14px 0;
+    gap: 8px;
+  }
+
+  .stat-items {
+    gap: 8px;
+  }
+
+  .pill .pill-label {
+    max-width: 100px;
+  }
+
+  .pill-balance {
+    display: none;
+  }
+}
