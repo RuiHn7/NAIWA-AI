@@ -165,13 +165,15 @@ function makeScene(width: number, height: number, seed: number, theme: PaintThem
   const aspect = width / height;
 
   // 天际线位置（0 顶部 → 1 底部）
-  const horizon = theme === 'abstract' ? 1.0 : theme === 'sea' ? 0.62 : 0.78;
+  const horizon = theme === 'abstract' ? 1.0 : theme === 'sea' ? 0.66 : 0.84;
 
   /* ------------------------------------------------------------ 天空底色 */
   const zenith = [0.0016, 0.0024, 0.0072];
   const mid = [0.0032, 0.005, 0.0135];
   const low = [0.0125, 0.0142, 0.0224];
-  const warm = [0.020, 0.0152, 0.0098];
+  const warm = [0.042, 0.031, 0.018];
+  // 地平线附近的一层冷色空气光（有它山脊才看得出是剪影，而不是一坨黑）
+  const air = [0.030, 0.040, 0.060];
 
   for (let y = 0; y < height; y += 1) {
     const ty = y / Math.max(1, height - 1);
@@ -183,9 +185,10 @@ function makeScene(width: number, height: number, seed: number, theme: PaintThem
       const col = (zenith[c] * (1 - m0) + mid[c] * m0) * (1 - m1) + low[c] * m1;
       lin[(y * width) * 3 + c] = col;
     }
-    // 地平线暖色气辉
+    // 地平线暖色气辉 + 冷色空气光
     const glow = Math.exp(-((ty - horizon) ** 2) / 0.009) * 0.9 + Math.exp(-((ty - horizon) ** 2) / 0.05) * 0.22;
-    for (let c = 0; c < 3; c += 1) lin[(y * width) * 3 + c] += warm[c] * glow;
+    const haze = Math.exp(-((ty - horizon) ** 2) / 0.020) * 0.9;
+    for (let c = 0; c < 3; c += 1) lin[(y * width) * 3 + c] += warm[c] * glow + air[c] * haze;
   }
 
   /* -------------------------------------------------------------- 银河带 */
@@ -193,12 +196,14 @@ function makeScene(width: number, height: number, seed: number, theme: PaintThem
     const angle = (theme === 'sea' ? 14 : 18 + rand() * 8) * (Math.PI / 180);
     const cx = theme === 'sea' ? 0.5 : 0.44 + rand() * 0.14;
     const cy = theme === 'sea' ? 0.3 : 0.34 + rand() * 0.1;
-    const sigma = 0.085 + rand() * 0.03;
+    const sigma = 0.062 + rand() * 0.022;
     const curve = 0.09 + rand() * 0.08;
     const ca = Math.cos(angle);
     const sa = Math.sin(angle);
-    const tintWarm = [1.0, 0.9, 0.72];
-    const tintCool = [0.62, 0.74, 1.0];
+    // 核心偏暖（老恒星），外沿偏冷（年轻星团与电离气体）
+    const tintCore = [1.0, 0.9, 0.74];
+    const tintMid = [0.86, 0.84, 0.94];
+    const tintOuter = [0.58, 0.7, 1.0];
 
     for (let y = 0; y < height; y += 1) {
       const vy = y / height - cy;
@@ -206,16 +211,65 @@ function makeScene(width: number, height: number, seed: number, theme: PaintThem
         const vx = (x / width - cx) * aspect;
         const along = vx * ca + vy * sa;
         const across = -vx * sa + vy * ca + curve * along * along;
-        const core = Math.exp(-((across / sigma) ** 2));
-        if (core < 0.004) continue;
-        const structure = 0.45 + 0.75 * fbm(vx * 5 + 3.1, vy * 5 + 7.7, seed + 71, 5, 0.55);
-        // 尘埃暗带
-        const dust = fbm(vx * 11 + 21, vy * 11 + 13, seed + 911, 4, 0.6);
-        const rift = Math.exp(-(((across + 0.028) / 0.026) ** 2)) * 0.7;
-        const light = (core * 0.05 + core * structure * 0.115) * (1 - 0.9 * Math.min(0.98, dust * 0.85 + rift));
+        const band = Math.exp(-((across / sigma) ** 2));
+        const halo = Math.exp(-((across / (sigma * 2.4)) ** 2)) * 0.34;
+        const core = band + halo;
+        if (core < 0.006) continue;
+
+        // 大块云气团 + 高频颗粒（这两层一起才有「星尘」的质感，不然是一条灰带）
+        const clump = fbm(vx * 3.4 + 3.1, vy * 3.4 + 7.7, seed + 71, 5, 0.55);
+        const grain = fbm(vx * 30 + 11, vy * 30 + 5, seed + 301, 3, 0.55);
+        // 尘埃带：沿银河拉长的噪声云，边缘不规则，不画硬边平行条
+        const dustN = fbm(along * 1.8 + 21, across * 13 + 13, seed + 911, 4, 0.62);
+        const dust = smooth(Math.max(0, Math.min(1, (dustN - 0.34) / 0.5)));
+
+        const glow = (band * 0.5 + halo * 0.16) * (0.26 + 0.9 * clump) * (0.5 + 0.8 * grain);
+        const light = glow * (1 - 0.9 * dust);
+        if (light < 1e-5) continue;
+
         const idx = (y * width + x) * 3;
+        // 三段配色：核心暖 → 中段灰紫 → 外沿冷蓝
+        const tWarm = Math.max(0, Math.min(1, (band - 0.42) / 0.5));
+        const tCool = Math.max(0, Math.min(1, (0.4 - band) / 0.4));
         for (let c = 0; c < 3; c += 1) {
-          lin[idx + c] += light * 0.3 * (core > 0.55 ? tintWarm[c] : tintCool[c]);
+          const base = tintMid[c] * (1 - tWarm) * (1 - tCool)
+            + tintCore[c] * tWarm * (1 - tCool)
+            + tintOuter[c] * tCool * (1 - tWarm);
+          lin[idx + c] += light * base * 0.5;
+        }
+      }
+    }
+
+    // 沿银河额外撒一层密集小星，才是「一条星海」而不是「一条光带」
+    const bandStars = Math.round(5200 * ((width * height) / (1024 * 1024)));
+    for (let i = 0; i < bandStars; i += 1) {
+      const along = (rand() * 2 - 1) * 1.35;
+      // 三角分布撒到 2.6σ 范围，比只堆在中心更像星海
+      const across = (rand() + rand() + rand() - 1.5) * sigma * 2.6;
+      const vx = along * ca - across * sa;
+      const vy = along * sa + across * ca;
+      const px = (vx / aspect + cx) * width;
+      const py = (vy + cy) * height;
+      if (px < 0 || px >= width || py < 0 || py >= height) continue;
+      const f = Math.pow(rand(), 5.5) * 0.42;
+      if (f < 0.002) continue;
+      const r = 0.62 + rand() * 0.28;
+      const span = Math.ceil(r * 2);
+      const ix = Math.floor(px);
+      const iy = Math.floor(py);
+      for (let dy = -span; dy <= span; dy += 1) {
+        const sy = iy + dy;
+        if (sy < 0 || sy >= height) continue;
+        for (let dx = -span; dx <= span; dx += 1) {
+          const sx = ix + dx;
+          if (sx < 0 || sx >= width) continue;
+          const d2 = (sx + 0.5 - px) ** 2 + (sy + 0.5 - py) ** 2;
+          const e = f * Math.exp(-d2 / (r * r * 0.55));
+          if (e < 1e-5) continue;
+          const idx = (sy * width + sx) * 3;
+          lin[idx] += e;
+          lin[idx + 1] += e * 0.93;
+          lin[idx + 2] += e * 0.86;
         }
       }
     }
@@ -247,9 +301,9 @@ function makeScene(width: number, height: number, seed: number, theme: PaintThem
   /* ---------------------------------------------------------------- 星点 */
   const area = (width * height) / (1024 * 1024);
   const layers = [
-    { count: Math.round(15000 * area), power: 6, flux: 0.5, radius: 0.9 },
-    { count: Math.round(2600 * area), power: 3.4, flux: 1.5, radius: 1.35 },
-    { count: Math.round(180 * area), power: 1.8, flux: 4.2, radius: 2.2 },
+    { count: Math.round(6200 * area), power: 7.5, flux: 0.34, radius: 0.85 },
+    { count: Math.round(900 * area), power: 4.2, flux: 0.95, radius: 1.25 },
+    { count: Math.round(70 * area), power: 2.2, flux: 2.6, radius: 2.0 },
   ];
   const brightest: { x: number; y: number; f: number }[] = [];
 
@@ -275,8 +329,8 @@ function makeScene(width: number, height: number, seed: number, theme: PaintThem
           const px = ix + dx;
           if (px < 0 || px >= width) continue;
           const d2 = (px + 0.5 - x) ** 2 + (py + 0.5 - y) ** 2;
-          const core = Math.exp(-d2 / (r * r));
-          const halo = Math.exp(-d2 / (r * r * 6)) * 0.12;
+          const core = Math.exp(-d2 / (r * r * 0.62));
+          const halo = Math.exp(-d2 / (r * r * 5)) * 0.05;
           const e = f * (core + halo);
           if (e < 1e-5) continue;
           const idx = (py * width + px) * 3;
@@ -285,7 +339,7 @@ function makeScene(width: number, height: number, seed: number, theme: PaintThem
           lin[idx + 2] += e * cb;
         }
       }
-      if (f > 2.0 && brightest.length < 14) brightest.push({ x, y, f });
+      if (f > 1.1 && brightest.length < 12) brightest.push({ x, y, f });
     }
   }
 
@@ -316,9 +370,9 @@ function makeScene(width: number, height: number, seed: number, theme: PaintThem
     const baseY = Math.floor(height * horizon);
     // 山脊高度线：三层叠加，越靠下越近越黑
     const ridges = [
-      { y: baseY - height * 0.02, amp: height * 0.075, freq: 2.2, dark: 0.62 },
-      { y: baseY + height * 0.03, amp: height * 0.05, freq: 3.6, dark: 0.86 },
-      { y: baseY + height * 0.085, amp: height * 0.032, freq: 5.4, dark: 1.0 },
+      { y: baseY + height * 0.005, amp: height * 0.085, freq: 1.9, dark: 0.7 },
+      { y: baseY + height * 0.05, amp: height * 0.055, freq: 3.2, dark: 0.88 },
+      { y: baseY + height * 0.1, amp: height * 0.034, freq: 5.0, dark: 1.0 },
     ];
     for (const ridge of ridges) {
       const seedOff = Math.floor(rand() * 1000);
@@ -341,7 +395,7 @@ function makeScene(width: number, height: number, seed: number, theme: PaintThem
 
     // 松树剪影（只在前景最靠下的一条带里）
     if (theme === 'landscape') {
-      const trees = Math.round((width / 1024) * 26);
+      const trees = Math.round((width / 1024) * 34);
       for (let i = 0; i < trees; i += 1) {
         const tx = rand() * width;
         const heightPx = height * (0.04 + rand() ** 1.6 * 0.16);
@@ -360,9 +414,9 @@ function makeScene(width: number, height: number, seed: number, theme: PaintThem
           const x1 = Math.min(width - 1, Math.ceil(tx + taper + wobble));
           for (let x = x0; x <= x1; x += 1) {
             const idx = (y * width + x) * 3;
-            lin[idx] *= 0.06;
-            lin[idx + 1] *= 0.07;
-            lin[idx + 2] *= 0.08;
+            lin[idx] *= 0.05;
+            lin[idx + 1] *= 0.055;
+            lin[idx + 2] *= 0.065;
           }
         }
       }
@@ -372,16 +426,37 @@ function makeScene(width: number, height: number, seed: number, theme: PaintThem
     if (theme === 'sea') {
       for (let y = baseY; y < height; y += 1) {
         const t = (y - baseY) / Math.max(1, height - baseY);
-        const srcY = Math.max(0, Math.floor(baseY - (y - baseY) * 1.6 - 1));
+        const srcY = Math.max(0, Math.floor(baseY - (y - baseY) * 1.35 - 1));
         for (let x = 0; x < width; x += 1) {
-          const wobble = Math.sin(y * 0.18 + x * 0.004) * 3 + Math.sin(y * 0.06) * 5;
+          const wobble = Math.sin(y * 0.15 + x * 0.004) * 4 + Math.sin(y * 0.05) * 6;
           const sx = Math.min(width - 1, Math.max(0, Math.round(x + wobble)));
-          const src = (srcY * width + sx) * 3;
           const dst = (y * width + x) * 3;
-          const fade = (1 - t) * 0.62 + 0.06;
-          lin[dst] = lin[src] * fade * 0.95 + 0.0018;
-          lin[dst + 1] = lin[src + 1] * fade * 0.97 + 0.0022;
-          lin[dst + 2] = lin[src + 2] * fade * 1.02 + 0.0034;
+          // 水平方向取三点均值，把倒影糊开，避免出现硬镜面
+          let ar = 0;
+          let ag = 0;
+          let ab = 0;
+          for (const off of [-2, 0, 2]) {
+            const sxp = Math.min(width - 1, Math.max(0, sx + off));
+            const src = (srcY * width + sxp) * 3;
+            ar += lin[src];
+            ag += lin[src + 1];
+            ab += lin[src + 2];
+          }
+          const fade = (1 - t) ** 1.2 * 0.42 + 0.03;
+          lin[dst] = (ar / 3) * fade * 0.92 + 0.0016;
+          lin[dst + 1] = (ag / 3) * fade * 0.95 + 0.002;
+          lin[dst + 2] = (ab / 3) * fade * 1.04 + 0.0032;
+        }
+      }
+      // 近处压暗，做出水面的纵深
+      for (let y = baseY; y < height; y += 1) {
+        const t = (y - baseY) / Math.max(1, height - baseY);
+        const k = 1 - 0.45 * t * t;
+        for (let x = 0; x < width; x += 1) {
+          const idx = (y * width + x) * 3;
+          lin[idx] *= k;
+          lin[idx + 1] *= k;
+          lin[idx + 2] *= k;
         }
       }
     }
