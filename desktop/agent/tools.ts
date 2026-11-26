@@ -274,16 +274,22 @@ const BUILTIN_THEME_HINT: Record<string, string> = {
 };
 
 /**
- * 内置渲染只是模板，画不出具体主体。必须把这件事写进 observation，
- * 否则主模型会以为「用户要的橘猫已经画好了」，对着路径硬编一段不存在的描述。
+ * 内置渲染的交代。认出主体时说明「画了什么、是什么风格」；
+ * 没认出主体时老实讲这只是模板底图，免得主模型对着路径硬编。
  */
-function builtinHint(theme?: string): string | null {
+function builtinHint(theme?: string, subject?: string): string | null {
   if (!theme) return null;
+  if (subject) {
+    return [
+      `内置渲染说明：已按提示词画出主体「${subject}」，风格是程序化插画（几何 + 光影 + 接触阴影），不是照片级写实。`,
+      '向用户说明这一点即可；要照片级质感得接真实出图后端。',
+    ].join('');
+  }
   const label = BUILTIN_THEME_HINT[theme] ?? theme;
   return [
     `内置渲染说明：画面是「${label}」模板，只有天空 / 山 / 水 / 柔光这些通用元素，`,
-    '**不含提示词里那个具体主体的造型**（人、动物、产品、建筑细节、文字都画不出来）。',
-    '所以要如实告诉用户这是一张模板底图；想画具体主体，得到「设置 → 图片生成」接入真实出图后端。',
+    '**没有认出提示词里的具体主体**（人、动物、产品、建筑细节、文字都画不出来）。',
+    '所以要如实告诉用户这是一张模板底图；想画具体主体，把主体写得更直白（如「一张桌子」「一只猫」）再试，或接入真实出图后端。',
   ].join('');
 }
 
@@ -296,21 +302,25 @@ function builtinHint(theme?: string): string | null {
  * 关掉「设置 → 接入模型 → 出图后自动核对」或没有视觉模型时，给一句明确的说明，
  * 让模型如实交代「没核对过」，而不是编造画面。
  */
-async function visualCheck(files: string[], prompt: string): Promise<string[]> {
+async function visualCheck(files: string[], prompt: string, knownScene?: string): Promise<string[]> {
   if (!files.length) return [];
+  // 内置渲染知道自己画了什么：直接自述，不依赖任何外部视觉模型
+  if (knownScene) {
+    return ['画面自述（内置渲染，本机生成，无需视觉模型）：', knownScene];
+  }
   if (getSettings().visionAutoCheck === false) return [];
   const { describeGeneratedImage, hasVisionTarget, visionTargetLabel } = await import('./vision');
   if (!hasVisionTarget()) {
     return [
-      '视觉核对：未配置识图模型，本次没有核对画面。',
-      '所以不要描述这张图的具体内容（你并没有看到它），只把图片路径给用户；需要核对自己去输入框底部点「识图」选一个支持图片输入的模型。',
+      '画面核对：没有外部视觉模型，这张图也不是内置渲染画的，所以没有画面信息。',
+      '不要描述这张图的具体内容（你并没有看到它），只把图片路径给用户；需要识别内容时用 image_understand（本机像素分析或已接入的视觉模型）。',
     ];
   }
   const result = await describeGeneratedImage({ imagePath: files[0], prompt });
   if (!result.ok) {
-    return [`视觉核对失败（${visionTargetLabel() ?? '视觉模型'}）：${result.error}`, '不要再声称自己看过这张图。'];
+    return [`画面核对失败（${visionTargetLabel() ?? '视觉模型'}）：${result.error}`, '不要再声称自己看过这张图。'];
   }
-  return [`视觉核对（${result.provider} · ${result.model}）：`, result.text ?? ''];
+  return [`画面核对（${result.provider} · ${result.model}）：`, result.text ?? ''];
 }
 
 /* ------------------------------------------------------------------ 工具定义 */
@@ -879,9 +889,9 @@ export const TOOLS: ToolDef[] = [
       const via = result.provider?.startsWith('builtin') ? `内置渲染 · ${result.provider.split(':')[1] ?? ''}` : result.provider;
       const lines = [`已生成 ${files.length} 张图片（${via ?? '图片后端'}）：`, ...files];
       if (result.note) lines.push('', `说明：${result.note}`);
-      const hint = builtinHint(result.builtinTheme);
+      const hint = builtinHint(result.builtinTheme, result.builtinSubject);
       if (hint) lines.push('', hint);
-      lines.push('', ...(await visualCheck(files, prompt)));
+      lines.push('', ...(await visualCheck(files, prompt, result.builtinScene)));
       lines.push('', '把图片路径告诉用户，需要调整就改写 prompt 再调用一次。');
       return { text: lines.join('\n'), filePath: files[0], files };
     },
@@ -957,9 +967,9 @@ export const TOOLS: ToolDef[] = [
       const via = result.provider?.startsWith('builtin') ? `内置渲染 · ${result.provider.split(':')[1] ?? ''}` : result.provider;
       const lines = [`已生成 ${files.length} 张图片（${via ?? '图片后端'}）：`, ...files];
       if (result.note) lines.push('', `说明：${result.note}`);
-      const hint = builtinHint(result.builtinTheme);
+      const hint = builtinHint(result.builtinTheme, result.builtinSubject);
       if (hint) lines.push('', hint);
-      lines.push('', ...(await visualCheck(files, str(args, 'prompt'))));
+      lines.push('', ...(await visualCheck(files, str(args, 'prompt'), result.builtinScene)));
       return {
         text: lines.join('\n'),
         filePath: files[0],

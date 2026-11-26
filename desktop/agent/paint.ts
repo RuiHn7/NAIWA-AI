@@ -25,6 +25,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import { detectSubject, drawSubject } from './scene';
 
 export type PaintTheme = 'night' | 'dusk' | 'day' | 'landscape' | 'sea' | 'studio';
 
@@ -41,6 +42,10 @@ export interface PaintResult {
   width: number;
   height: number;
   theme: PaintTheme;
+  /** 画面里画了什么（主体 + 场景），出图核对直接用这句，不需要外部视觉模型 */
+  scene: string;
+  /** 认出来的主体，none 表示只画了背景 */
+  subject: string;
 }
 
 /* --------------------------------------------------------------- 随机与噪声 */
@@ -266,6 +271,10 @@ interface Scene {
   lin: Float32Array;
   width: number;
   height: number;
+  /** 场景自述：画了什么主体、怎么打光 */
+  scene: string;
+  /** 认出的主体名，空串表示只有背景 */
+  subject: string;
 }
 
 /** 银河带：只在 night / dusk 用，strength 控制强弱 */
@@ -430,12 +439,13 @@ function paintSun(
   }
 }
 
-function makeScene(width: number, height: number, seed: number, theme: PaintTheme): Scene {
+function makeScene(width: number, height: number, seed: number, theme: PaintTheme, subject: ReturnType<typeof detectSubject>): Scene {
   const lin = new Float32Array(width * height * 3);
   const rand = rng(seed);
   const aspect = width / height;
   const palette = PALETTES[theme];
   const horizon = HORIZON[theme];
+  const hasSubject = subject.kind !== 'none';
 
   /* ------------------------------------------------------------ 天空底色 */
   for (let y = 0; y < height; y += 1) {
@@ -721,48 +731,56 @@ function makeScene(width: number, height: number, seed: number, theme: PaintThem
       }
     }
 
-    // 主体：一个柔边的立式静物（花瓶 / 杯子那一类），左上方来光
-    const subjH = height * 0.3;
-    const subjW = width * 0.11;
-    const cx = width * 0.5;
-    const bottom = baseY + height * 0.045;
-    const top = bottom - subjH;
-    const subjTint = [0.2, 0.196, 0.19];
-    for (let y = Math.max(0, Math.floor(top)); y < Math.min(height, Math.ceil(bottom)); y += 1) {
-      const v = (y - top) / subjH; // 0 顶 1 底
-      // 上下都收一点，做出瓶身轮廓
-      const taper = 0.78 + 0.22 * Math.sin(Math.PI * Math.min(1, Math.max(0, v)));
-      const halfW = subjW * taper;
-      for (let x = Math.max(0, Math.floor(cx - halfW)); x < Math.min(width, Math.ceil(cx + halfW)); x += 1) {
-        const u = (x - cx) / Math.max(1, halfW); // -1..1
-        if (Math.abs(u) >= 1) continue;
-        const edge = smooth(Math.min(1, (1 - Math.abs(u)) / 0.22));
-        // 光从左上打过来：左侧亮、右侧暗
-        const shade = 0.42 + 0.58 * (1 - (u + 1) / 2) * (0.55 + 0.45 * (1 - v));
-        const a = edge * shade;
-        if (a < 0.004) continue;
-        const idx = (y * width + x) * 3;
-        for (let c = 0; c < 3; c += 1) lin[idx + c] += subjTint[c] * a;
+    // 没认出具体主体时，才退回「一个柔边立式静物」的默认画面
+    if (!hasSubject) {
+      // 主体：一个柔边的立式静物（花瓶 / 杯子那一类），左上方来光
+      const subjH = height * 0.3;
+      const subjW = width * 0.11;
+      const cx = width * 0.5;
+      const bottom = baseY + height * 0.045;
+      const top = bottom - subjH;
+      const subjTint = [0.2, 0.196, 0.19];
+      for (let y = Math.max(0, Math.floor(top)); y < Math.min(height, Math.ceil(bottom)); y += 1) {
+        const v = (y - top) / subjH; // 0 顶 1 底
+        // 上下都收一点，做出瓶身轮廓
+        const taper = 0.78 + 0.22 * Math.sin(Math.PI * Math.min(1, Math.max(0, v)));
+        const halfW = subjW * taper;
+        for (let x = Math.max(0, Math.floor(cx - halfW)); x < Math.min(width, Math.ceil(cx + halfW)); x += 1) {
+          const u = (x - cx) / Math.max(1, halfW); // -1..1
+          if (Math.abs(u) >= 1) continue;
+          const edge = smooth(Math.min(1, (1 - Math.abs(u)) / 0.22));
+          // 光从左上打过来：左侧亮、右侧暗
+          const shade = 0.42 + 0.58 * (1 - (u + 1) / 2) * (0.55 + 0.45 * (1 - v));
+          const a = edge * shade;
+          if (a < 0.004) continue;
+          const idx = (y * width + x) * 3;
+          for (let c = 0; c < 3; c += 1) lin[idx + c] += subjTint[c] * a;
+        }
       }
-    }
 
-    // 主体脚下的接触阴影，让它坐在台面上而不是浮着
-    const shadowR = subjW * 1.9;
-    for (let y = Math.max(0, Math.floor(bottom - height * 0.006)); y < Math.min(height, Math.ceil(bottom + height * 0.022)); y += 1) {
-      const dy = (y - bottom) / (height * 0.028);
-      for (let x = Math.max(0, Math.floor(cx - shadowR)); x < Math.min(width, Math.ceil(cx + shadowR)); x += 1) {
-        const dx = (x - cx) / shadowR;
-        const a = Math.max(0, 1 - dx * dx - dy * dy * 0.6) * 0.28;
-        if (a < 0.003) continue;
-        const idx = (y * width + x) * 3;
-        lin[idx] *= 1 - a;
-        lin[idx + 1] *= 1 - a;
-        lin[idx + 2] *= 1 - a;
+      // 主体脚下的接触阴影，让它坐在台面上而不是浮着
+      const shadowR = subjW * 1.9;
+      for (let y = Math.max(0, Math.floor(bottom - height * 0.006)); y < Math.min(height, Math.ceil(bottom + height * 0.022)); y += 1) {
+        const dy = (y - bottom) / (height * 0.028);
+        for (let x = Math.max(0, Math.floor(cx - shadowR)); x < Math.min(width, Math.ceil(cx + shadowR)); x += 1) {
+          const dx = (x - cx) / shadowR;
+          const a = Math.max(0, 1 - dx * dx - dy * dy * 0.6) * 0.28;
+          if (a < 0.003) continue;
+          const idx = (y * width + x) * 3;
+          lin[idx] *= 1 - a;
+          lin[idx + 1] *= 1 - a;
+          lin[idx + 2] *= 1 - a;
+        }
       }
     }
   }
 
-  return { lin, width, height };
+  /* --------------------------------------------------- 具体主体（桌子 / 猫 …） */
+  const painted = drawSubject(lin, { width, height, horizon, subject });
+  const sceneText = painted.drawn
+    ? painted.description
+    : `程序化背景：${theme} 主题的风景底图，没有具体物体。`;
+  return { lin, width, height, scene: sceneText, subject: painted.drawn ? subject.label : '' };
 }
 
 /* ---------------------------------------------------------------- 后期处理 */
@@ -841,14 +859,15 @@ export function paintImage(dir: string, input: PaintInput, index = 0): PaintResu
   const height = Math.max(256, Math.min(2048, Math.round(input.height) || 1024));
   const seed = input.seed ?? (strSeed(input.prompt) ^ (Date.now() & 0x7fffffff) ^ (index * 2654435761)) >>> 0;
   const theme = pickTheme(input.prompt);
+  const subject = detectSubject(input.prompt);
 
-  const scene = makeScene(width, height, seed, theme);
+  const scene = makeScene(width, height, seed, theme, subject);
   const rgb = finish(scene, seed);
 
   fs.mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `paint-${Date.now()}-${index}.png`);
   fs.writeFileSync(file, encodePng(width, height, rgb));
-  return { path: file, width, height, theme };
+  return { path: file, width, height, theme, scene: scene.scene, subject: scene.subject };
 }
 
 /** 主题的中文说明，给工具返回文案用 */

@@ -195,11 +195,13 @@ export async function understandImageBytes(input: { bytes: Buffer; mime: string;
 
   const hit = pickVisionTarget();
   if (!hit) {
-    return {
-      ok: false,
-      error:
-        '当前没有任何接入项带视觉模型，识图做不了。可以在输入框底部点「识图」选一个支持图片输入的模型（如 gpt-4o、claude-sonnet、gemini、qwen-vl），或到「设置 → 接入模型」接入一个多模态接入项。',
-    };
+    // 没有外部视觉模型也不摆烂：退回本机像素分析，色彩 / 明暗 / 构图照样能说清
+    const { perceive, perceptToText } = await import('./perceive');
+    const percept = perceive({ bytes });
+    if (!percept) {
+      return { ok: false, error: `本机解不开这张图（${mime}）。可能是格式不支持或文件损坏；换一张 PNG / JPG 再试。` };
+    }
+    return { ok: true, text: perceptToText(percept, query), provider: '本机', model: '像素分析' };
   }
 
   const dataUrl = `data:${mime};base64,${bytes.toString('base64')}`;

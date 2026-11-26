@@ -814,6 +814,20 @@ export const EN: Record<string, string> = {
   新版本: 'New version',
   忽略: 'Dismiss',
   发现新版本: 'New version found',
+  下载并安装: 'Download and install',
+  下载中: 'Downloading',
+  重启并安装: 'Restart and install',
+  '正在启动安装程序…': 'Launching installer…',
+  '校验安装包…': 'Verifying package…',
+  已下载: 'Downloaded',
+  下载失败: 'Download failed',
+  启动安装程序失败: 'Failed to launch the installer',
+  '安装包已下载，可以重启安装了': 'Installer downloaded — ready to restart and install',
+  '安装包已就绪：点「重启并安装」会自动关闭本程序并启动安装器':
+    'Installer is ready: "Restart and install" closes this app and launches the installer.',
+  '这次发布没有挂安装包，只能到下载页手动下。':
+    'This release has no installer attached — download it from the release page.',
+
   '检查更新失败': 'Update check failed',
   本次会话的产物: 'Outputs from this chat',
 

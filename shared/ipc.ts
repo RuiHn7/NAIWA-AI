@@ -139,8 +139,16 @@ export interface InvokeMap {
       publishedAt?: string;
       notes?: string;
       source?: 'release' | 'tag' | 'package' | 'manifest';
+      installer?: { name: string; url: string; size: number; sha256?: string };
     };
   };
+  /** 下载新版本安装包到临时目录（进度走 update:progress 事件） */
+  'update:download': {
+    req: { name: string; url: string; size?: number; sha256?: string };
+    res: { ok: boolean; path?: string; error?: string };
+  };
+  /** 启动安装程序并退出应用 */
+  'update:install': { req: { path: string }; res: { ok: boolean; error?: string } };
   /** 选择新的会话默认存放位置（返回选中的绝对路径） */
   'settings:pick-chat-root': { req: void; res: { path: string } | null };
   /** 把已有会话文件夹迁移到新的根目录 */
@@ -313,6 +321,7 @@ export interface EventMap {
   'approval:request': ApprovalRequest;
   'approval:resolved': { id: string; approved: boolean };
   'settings:changed': AppSettings;
+  'update:progress': { phase: 'downloading' | 'verifying' | 'done'; received: number; total: number; percent: number };
   'theme:changed': { shouldUseDarkColors: boolean };
   'mcp:state': McpServerState;
   'task:completed': { task: ScheduledTask; record: TaskRunRecord };

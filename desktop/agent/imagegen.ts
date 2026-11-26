@@ -167,6 +167,10 @@ export interface GenerateResult {
   provider?: string;
   /** 内置渲染时用了哪套模板（night / dusk / …），工具层据此告诉模型「这只是模板画面」 */
   builtinTheme?: string;
+  /** 内置渲染的场景自述：画了什么主体、怎么打光。出图核对直接用它，无需外部视觉模型 */
+  builtinScene?: string;
+  /** 内置渲染认出的主体名（空串表示只有背景） */
+  builtinSubject?: string;
 }
 
 export async function generateImages(input: GenerateImagesInput): Promise<GenerateResult> {
@@ -179,9 +183,13 @@ export async function generateImages(input: GenerateImagesInput): Promise<Genera
     const { width, height } = parseSize(input.size);
     const files: { path: string; url: string }[] = [];
     let theme = pickTheme(input.prompt);
+    let scene = '';
+    let subject = '';
     for (let i = 0; i < count; i += 1) {
       const out = paintImage(dir, { prompt: input.prompt, width, height }, i);
       theme = out.theme;
+      scene = out.scene;
+      subject = out.subject;
       files.push({ path: out.path, url: `file://${out.path.replace(/\\/g, '/')}` });
     }
     const record: GeneratedImage = {
@@ -198,7 +206,7 @@ export async function generateImages(input: GenerateImagesInput): Promise<Genera
       chatId: input.chatId ?? null,
     };
     addImages([record]);
-    return { ok: true, images: [record], note: why, provider: `builtin:${themeLabel(theme)}`, builtinTheme: theme };
+    return { ok: true, images: [record], note: why, provider: `builtin:${themeLabel(theme)}`, builtinTheme: theme, builtinScene: scene, builtinSubject: subject };
   };
 
   if (provider.kind === 'builtin') return paint('内置渲染');

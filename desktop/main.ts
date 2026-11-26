@@ -310,7 +310,13 @@ function createTray(): void {
  * 显式钉回原来的 `naiwa-desktop` 目录，老数据（会话/设置/密钥）照旧可读。
  */
 app.setName('NAI WA');
-app.setPath('userData', path.join(app.getPath('appData'), 'naiwa-desktop'));
+/**
+ * 默认 userData 固定在 naiwa-desktop，老数据照旧可读。
+ * 开发 / 验收时可以用 NAIWA_PROFILE=test 启动一份独立的用户数据（含单实例锁），
+ * 这样不用退出正在用的正式版本也能同时跑一个干净实例。
+ */
+const profile = (process.env.NAIWA_PROFILE ?? '').trim();
+app.setPath('userData', path.join(app.getPath('appData'), profile ? `naiwa-desktop-${profile}` : 'naiwa-desktop'));
 app.setAppUserModelId('com.naiwa.desktop');
 
 const gotLock = app.requestSingleInstanceLock();

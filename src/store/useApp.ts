@@ -65,6 +65,8 @@ export interface UpdateState {
   publishedAt: string | null;
   error: string | null;
   checkedAt: number;
+  /** 可下载的安装包（没有就要去网页下载） */
+  installer: { name: string; url: string; size: number; sha256?: string } | null;
 }
 
 /** 应用内确认框请求（替代会阻塞渲染进程的 window.confirm） */
@@ -701,6 +703,7 @@ export const useApp = create<AppState>((set, get) => ({
         publishedAt: res.publishedAt ?? null,
         error: res.ok ? null : (res.reason ?? '检查失败'),
         checkedAt: Date.now(),
+        installer: res.installer ?? null,
       };
       set({ update: state });
       if (!silent) {
@@ -718,6 +721,7 @@ export const useApp = create<AppState>((set, get) => ({
         notes: null,
         publishedAt: null,
         error: err instanceof Error ? err.message : String(err),
+        installer: null,
         checkedAt: Date.now(),
       };
       set({ update: state });

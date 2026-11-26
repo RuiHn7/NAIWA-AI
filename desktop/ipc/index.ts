@@ -73,7 +73,7 @@ import { fetchBalance } from '../llm/balance';
 import { LlmError } from '../llm/types';
 import { sendMessage, stopChat, regenerate, usageOf, compressNow } from '../agent/runner';
 import { generateImages } from '../agent/imagegen';
-import { checkForUpdate } from '../agent/update';
+import { checkForUpdate, downloadUpdate, launchInstaller } from '../agent/update';
 import { listPending, resolveApproval } from '../agent/permissions';
 import { runtimeInfo } from '../agent/sandbox';
 import {
@@ -134,6 +134,13 @@ export function registerIpc(emit: Emit): void {
   handle('settings:migrate-chat-root', ({ from, to }) => migrateChatRoot(from, to));
 
   handle('app:check-update', () => checkForUpdate());
+  handle('update:download', ({ name, url, size, sha256 }) =>
+    downloadUpdate(
+      { name, url, size: size ?? 0, sha256 },
+      progress => emit('update:progress', progress),
+    ),
+  );
+  handle('update:install', ({ path: file }) => launchInstaller(file));
 
   /* ------------------------------------------------------------ 接入与模型 */
 
