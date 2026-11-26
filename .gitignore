@@ -5,6 +5,9 @@ node_modules/
 dist/
 dist-electron/
 release/
+# 打包中间目录（本机 asar 被占用时会留下）
+release-1.1.1/
+release-build/
 
 # 本地联调用的截图与日志
 shots/
