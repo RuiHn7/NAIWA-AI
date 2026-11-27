@@ -73,7 +73,7 @@ import { fetchBalance } from '../llm/balance';
 import { LlmError } from '../llm/types';
 import { sendMessage, stopChat, regenerate, usageOf, compressNow } from '../agent/runner';
 import { generateImages } from '../agent/imagegen';
-import { checkForUpdate, downloadUpdate, launchInstaller } from '../agent/update';
+import { cancelDownload, checkForUpdate, clearDownload, downloadUpdate, launchInstaller } from '../agent/update';
 import { listPending, resolveApproval } from '../agent/permissions';
 import { runtimeInfo } from '../agent/sandbox';
 import {
@@ -140,6 +140,8 @@ export function registerIpc(emit: Emit): void {
       progress => emit('update:progress', progress),
     ),
   );
+  handle('update:cancel', () => cancelDownload());
+  handle('update:reset', ({ name }) => clearDownload({ name, url: '', size: 0 }));
   handle('update:install', ({ path: file }) => launchInstaller(file));
 
   /* ------------------------------------------------------------ 接入与模型 */

@@ -11,7 +11,8 @@ const common = {
   bundle: true,
   format: 'cjs',
   sourcemap: true,
-  external: ['electron'],
+  // onnxruntime-node 是原生模块（.node 二进制），必须外部化，随 app 的 node_modules 分发
+  external: ['electron', 'onnxruntime-node'],
   logLevel: 'info',
 };
 

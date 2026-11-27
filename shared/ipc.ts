@@ -145,8 +145,12 @@ export interface InvokeMap {
   /** 下载新版本安装包到临时目录（进度走 update:progress 事件） */
   'update:download': {
     req: { name: string; url: string; size?: number; sha256?: string };
-    res: { ok: boolean; path?: string; error?: string };
+    res: { ok: boolean; path?: string; error?: string; canceled?: boolean };
   };
+  /** 停止正在进行的下载（已下载的分块保留，可继续） */
+  'update:cancel': { req: void; res: { ok: boolean; canceled: boolean } };
+  /** 删除该安装包的下载文件与分块进度（重新下载用） */
+  'update:reset': { req: { name: string }; res: { ok: boolean; removed: number } };
   /** 启动安装程序并退出应用 */
   'update:install': { req: { path: string }; res: { ok: boolean; error?: string } };
   /** 选择新的会话默认存放位置（返回选中的绝对路径） */
@@ -321,7 +325,15 @@ export interface EventMap {
   'approval:request': ApprovalRequest;
   'approval:resolved': { id: string; approved: boolean };
   'settings:changed': AppSettings;
-  'update:progress': { phase: 'downloading' | 'verifying' | 'done'; received: number; total: number; percent: number };
+  'update:progress': {
+    phase: 'probing' | 'downloading' | 'verifying' | 'done';
+    received: number;
+    total: number;
+    percent: number;
+    speed?: number;
+    source?: string;
+    sources?: number;
+  };
   'theme:changed': { shouldUseDarkColors: boolean };
   'mcp:state': McpServerState;
   'task:completed': { task: ScheduledTask; record: TaskRunRecord };

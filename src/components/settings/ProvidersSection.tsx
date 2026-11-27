@@ -471,7 +471,7 @@ export function ProvidersSection() {
       {/* 底部：识图 —— 默认走软件内置的本机识图，下面只是可选的精度增强 */}
       <Card title={t('识图（可选精度增强）')} sub={t('默认用软件内置的本机识图')}>
         <div className="setting-hint" style={{ textAlign: 'left', marginBottom: 12 }}>
-          {t('软件内置识图，无需配置：本地解码 + 像素分析判断图像类型，Windows 自带 OCR 离线读出图中文字，本软件生成的图还会回查生成历史拿到提示词与主体。这些文字事实交给当前主模型理解并回答，所以纯文本主模型也能识图。下面只在需要更高精度（例如辨认照片里的具体物体）时才用得上。')}
+          {t('软件内置识图，无需配置：内置离线识别模型（MobileNetV2，1000 类，本机推理）直接判断「这是什么物体」并给出置信度，像素分析判断图像类型，Windows 自带 OCR 离线读出图中文字，本软件生成的图还会回查生成历史拿到提示词与主体。这些事实交给当前主模型理解并回答，所以纯文本主模型也能识图。下面只在需要更高精度时才用得上。')}
         </div>
         {(() => {
           const usable = providers.filter(p => p.enabled && p.hasKey && p.models.length > 0);

@@ -220,6 +220,8 @@ const server = http.createServer((req, res) => {
       const isAgentLoop = lastUserText.includes('打转回归');
       // 补丁报错回归：验证 edit_patch 的错误信息是否可读
       const isAgentFail = lastUserText.includes('补丁报错回归');
+      // 识图回归：验证内置离线识别模型能说出「这是什么」
+      const isVisionDrill = lastUserText.includes('识图回归');
       // 生图回归：验证产物能在对话里内联显示
       const isImageDrill = lastUserText.includes('生图回归');
 
@@ -289,6 +291,24 @@ const server = http.createServer((req, res) => {
         }
         return emitToolCall(res, model, 'call_img_finish', 'finish', {
           summary: '生图回归：图片已生成，工具卡里应带出图后端标签、模板说明与视觉核对结果。',
+        });
+      }
+
+      // 识图回归：先调 image_understand，再把报告摘要放进 finish 的 summary
+      if (isVisionDrill) {
+        const lastUserIdxV =
+          messages.map((m, i) => (m.role === 'user' ? i : -1)).filter((i) => i >= 0).pop() ?? 0;
+        const toolMsgsV = messages.slice(lastUserIdxV + 1).filter((m) => m.role === 'tool');
+        if (!toolMsgsV.length) {
+          return emitToolCall(res, model, 'call_vision_1', 'image_understand', {
+            image_url: process.env.MOCK_IMAGE || 'C:/Users/Administrator/Desktop/1 (2).png',
+            query: '这是什么？图里有什么？',
+          });
+        }
+        const raw = toolMsgsV[0].content;
+        const text = typeof raw === 'string' ? raw : JSON.stringify(raw);
+        return emitToolCall(res, model, 'call_vision_finish', 'finish', {
+          summary: '识图回归结果：' + text.replace(/\s+/g, ' ').slice(0, 600),
         });
       }
 

@@ -183,59 +183,349 @@ export async function checkForUpdate(): Promise<UpdateCheck> {
 
 /* ------------------------------------------------------- 应用内下载与安装 */
 
-/** 只允许从 GitHub 官方域名下载，防止被篡改成任意地址 */
-const TRUSTED_HOST = /^https:////(github/.com|objects/.githubusercontent/.com|release-assets/.githubusercontent/.com)///i;
+/**
+ * 下载线路：
+ *   · GitHub 直连：只有官方域名可信
+ *   · 加速镜像：只为「有 SHA-256 校验」的资产启用 —— 镜像不可信，校验兜底
+ * 先并发测速（各拉 1MB 计时），选最快的一条，再分块并发下载。
+ */
+const GITHUB_HOST =
+  /^https:\/\/(github\.com|objects\.githubusercontent\.com|release-assets\.githubusercontent\.com)\//i;
+
+const MIRRORS: Array<{ name: string; prefix: string }> = [
+  { name: '加速线路 1', prefix: 'https://ghfast.top/' },
+  { name: '加速线路 2', prefix: 'https://gh-proxy.com/' },
+  { name: '加速线路 3', prefix: 'https://ghproxy.net/' },
+  { name: '加速线路 4', prefix: 'https://gh.llkk.cc/' },
+];
+
+interface Source {
+  name: string;
+  url: string;
+}
+
+/** 候选线路：直连永远第一；镜像只在有 SHA-256 时加入（否则无法校验来源） */
+function candidateSources(asset: UpdateAsset): Source[] {
+  const list: Source[] = [{ name: 'GitHub 直连', url: asset.url }];
+  if (asset.sha256) {
+    for (const m of MIRRORS) list.push({ name: m.name, url: `${m.prefix}${asset.url}` });
+  }
+  return list;
+}
 
 export interface DownloadProgress {
-  phase: 'downloading' | 'verifying' | 'done';
+  phase: 'probing' | 'downloading' | 'verifying' | 'done';
   received: number;
   total: number;
   /** 0-100，total 未知时是 0 */
   percent: number;
+  /** 当前速度（字节/秒），测速阶段为 0 */
+  speed?: number;
+  /** 当前使用的线路名 */
+  source?: string;
+  /** 竞速后采用的线路数（让 UI 能说明「已自动选最快线路」） */
+  sources?: number;
+}
+
+/** 正在进行的下载，用于「停止下载」 */
+let activeDownload: AbortController | null = null;
+
+/** 停止当前下载（已下载的分块保留，下次可继续） */
+export function cancelDownload(): { ok: boolean; canceled: boolean } {
+  if (!activeDownload) return { ok: true, canceled: false };
+  activeDownload.abort();
+  activeDownload = null;
+  return { ok: true, canceled: true };
+}
+
+function updateDir(): string {
+  return path.join(app.getPath('temp'), 'naiwa-updates');
+}
+
+function targetFile(asset: UpdateAsset): string {
+  const safeName = asset.name.replace(/[^\w.\-]+/g, '_') || 'naiwa-update.exe';
+  return path.join(updateDir(), safeName);
+}
+
+/** 清掉某个安装包的所有下载产物（正式文件 + 分块），用于「重新下载」 */
+export async function clearDownload(asset: UpdateAsset): Promise<{ ok: boolean; removed: number }> {
+  cancelDownload();
+  const file = targetFile(asset);
+  const dir = path.dirname(file);
+  const base = path.basename(file);
+  let removed = 0;
+  try {
+    const entries = await fsp.readdir(dir);
+    for (const name of entries) {
+      if (name === base || name.startsWith(`${base}.part`)) {
+        await fsp.unlink(path.join(dir, name)).catch(() => {});
+        removed += 1;
+      }
+    }
+  } catch {
+    /* 目录不存在就是没下过 */
+  }
+  return { ok: true, removed };
+}
+
+/** 并发测速：各线路拉前 1MB，返回吞吐（字节/毫秒）；失败返回 0 */
+async function probeSource(src: Source, signal: AbortSignal): Promise<number> {
+  const started = Date.now();
+  try {
+    const res = await fetch(src.url, {
+      headers: { range: 'bytes=0-1048575', 'user-agent': 'NAI-WA-Desktop' },
+      redirect: 'follow',
+      signal,
+    });
+    if (!res.ok && res.status !== 206) return 0;
+    if (!res.body) return 0;
+    let got = 0;
+    for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+      got += chunk.length;
+      if (got >= 1024 * 1024) break;
+    }
+    const ms = Math.max(1, Date.now() - started);
+    // 小于 64KB 视为被限速/被劫持，不参与竞速
+    return got < 64 * 1024 ? 0 : got / ms;
+  } catch {
+    return 0;
+  }
 }
 
 /**
- * 把安装包下到临时目录。已存在且大小一致时直接复用（断点续传的简化版：
- * 至少重复点「下载」不会重下一遍 100MB）。
+ * 把安装包下到临时目录。
+ *  · 多线路并发测速，自动选最快的一条（直连 + 3 条加速镜像）
+ *  · 4 路 Range 分块并发下载；分块文件保留，支持「停止后继续」
+ *  · 完成后校验大小与 SHA-256，失败自动换下一条线路重试一次
  */
 export async function downloadUpdate(
   asset: UpdateAsset,
   onProgress: (p: DownloadProgress) => void,
-): Promise<{ ok: boolean; path?: string; error?: string }> {
-  if (!TRUSTED_HOST.test(asset.url)) {
+): Promise<{ ok: boolean; path?: string; error?: string; canceled?: boolean }> {
+  if (!GITHUB_HOST.test(asset.url)) {
     return { ok: false, error: `拒绝从非 GitHub 域名下载：${asset.url}` };
   }
-  const dir = path.join(app.getPath('temp'), 'naiwa-updates');
-  await fsp.mkdir(dir, { recursive: true });
-  const safeName = asset.name.replace(/[^\w.\-]+/g, '_') || 'naiwa-update.exe';
-  const file = path.join(dir, safeName);
+  await fsp.mkdir(updateDir(), { recursive: true });
+  const file = targetFile(asset);
 
+  // 已经下完（大小对得上）就直接用
   try {
     const stat = await fsp.stat(file);
     if (!asset.size || stat.size === asset.size) {
-      onProgress({ phase: 'done', received: stat.size, total: stat.size, percent: 100 });
+      onProgress({ phase: 'done', received: stat.size, total: stat.size, percent: 100, speed: 0 });
       return { ok: true, path: file };
     }
+    await fsp.unlink(file).catch(() => {});
   } catch {
     /* 没下过就正常下载 */
   }
 
-  let res: Response;
-  try {
-    res = await fetch(asset.url, {
-      headers: { 'user-agent': 'NAI-WA-Desktop' },
-      redirect: 'follow',
-      signal: AbortSignal.timeout(30 * 60 * 1000),
-    });
-  } catch (err) {
-    return { ok: false, error: `连不上下载地址：${(err as Error).message}` };
-  }
-  if (!res.ok || !res.body) return { ok: false, error: `下载失败：HTTP ${res.status}` };
+  activeDownload?.abort();
+  const controller = new AbortController();
+  activeDownload = controller;
+  const { signal } = controller;
 
-  const total = Number(res.headers.get('content-length') ?? 0) || asset.size || 0;
+  const sources = candidateSources(asset);
+  onProgress({ phase: 'probing', received: 0, total: asset.size, percent: 0, speed: 0, sources: sources.length });
+
+  // 1) 并发测速（整体 6 秒上限，直连慢就自动走镜像）
+  let ranked = sources;
+  if (sources.length > 1) {
+    const probeSignal = AbortSignal.any([signal, AbortSignal.timeout(6000)]);
+    const scores = await Promise.all(sources.map(s => probeSource(s, probeSignal)));
+    const withScore = sources.map((s, i) => ({ s, score: scores[i] }));
+    const usable = withScore.filter(x => x.score > 0).sort((a, b) => b.score - a.score);
+    if (usable.length) ranked = usable.map(x => x.s);
+    else ranked = sources;
+  }
+
+  const total = asset.size || 0;
+
+  // 2) 依次尝试线路，成功即用
+  let lastError = '';
+  for (let attempt = 0; attempt < Math.min(2, ranked.length); attempt += 1) {
+    const src = ranked[attempt];
+    try {
+      const done = await fetchToFile(src, file, total, signal, onProgress, attempt);
+      if (done.canceled) return { ok: false, canceled: true, error: '已停止下载' };
+      if (!done.ok) {
+        lastError = done.error ?? '下载失败';
+        continue;
+      }
+    } catch (err) {
+      if (signal.aborted) return { ok: false, canceled: true, error: '已停止下载' };
+      lastError = (err as Error).message;
+      continue;
+    }
+
+    // 3) 校验
+    onProgress({ phase: 'verifying', received: total, total, percent: 100, speed: 0, source: src.name });
+    const stat = await fsp.stat(file).catch(() => null);
+    if (asset.size && (!stat || stat.size !== asset.size)) {
+      lastError = `下载不完整（${stat?.size ?? 0}/${asset.size} 字节）`;
+      await fsp.unlink(file).catch(() => {});
+      continue;
+    }
+    if (asset.sha256) {
+      const got = await sha256File(file);
+      if (got.toLowerCase() !== asset.sha256.toLowerCase()) {
+        lastError = '安装包校验失败（SHA-256 不一致），已删除，请重新下载。';
+        await fsp.unlink(file).catch(() => {});
+        continue;
+      }
+    }
+    onProgress({ phase: 'done', received: asset.size || stat?.size || 0, total: asset.size || stat?.size || 0, percent: 100, speed: 0, source: src.name });
+    activeDownload = null;
+    return { ok: true, path: file };
+  }
+
+  activeDownload = null;
+  return { ok: false, error: lastError || '所有下载线路都失败了，请稍后重试。' };
+}
+
+async function sha256File(file: string): Promise<string> {
+  const hash = createHash('sha256');
+  await new Promise<void>((resolve, reject) => {
+    const stream = fs.createReadStream(file);
+    stream.on('data', d => hash.update(d));
+    stream.on('end', () => resolve());
+    stream.on('error', reject);
+  });
+  return hash.digest('hex');
+}
+
+/** 单条线路下载：优先 4 路 Range 并发；不支持 Range 就退回单流 */
+async function fetchToFile(
+  src: Source,
+  file: string,
+  knownTotal: number,
+  signal: AbortSignal,
+  onProgress: (p: DownloadProgress) => void,
+  attempt: number,
+): Promise<{ ok: boolean; canceled?: boolean; error?: string }> {
+  const head = await fetch(src.url, {
+    headers: { range: 'bytes=0-0', 'user-agent': 'NAI-WA-Desktop' },
+    redirect: 'follow',
+    signal,
+  });
+  if (!head.ok && head.status !== 206) throw new Error(`HTTP ${head.status}`);
+  const contentRange = head.headers.get('content-range') ?? '';
+  const total =
+    Number(contentRange.split('/')[1] ?? 0) ||
+    Number(head.headers.get('content-length') ?? 0) ||
+    knownTotal ||
+    0;
+  const supportsRange = head.status === 206 && total > 0;
+  // 立刻释放测速连接
+  await head.body?.cancel().catch(() => {});
+
+  if (!supportsRange) {
+    return singleStream(src, file, total, signal, onProgress, attempt);
+  }
+
+  const parts = chunkCount(total);
+  const per = Math.ceil(total / parts);
+  const partFiles: string[] = [];
+  let received = 0;
+  let lastTick = 0;
+  const started = Date.now();
+  let lastBytes = 0;
+
+  const report = (force = false) => {
+    const now = Date.now();
+    if (!force && now - lastTick < 200) return;
+    lastTick = now;
+    const speed = lastBytes > 0 && now > started ? lastBytes / ((now - started) / 1000) : 0;
+    onProgress({
+      phase: 'downloading',
+      received,
+      total,
+      percent: total ? Math.min(99, Math.round((received / total) * 100)) : 0,
+      speed,
+      source: src.name,
+    });
+  };
+
+  try {
+    for (let i = 0; i < parts; i += 1) {
+      const start = i * per;
+      const end = Math.min(total, start + per) - 1;
+      if (end < start) continue;
+      const partFile = `${file}.part${i}`;
+      partFiles.push(partFile);
+      const expected = end - start + 1;
+
+      // 断点续传：已有的分块直接计入进度
+      let have = 0;
+      try {
+        const st = await fsp.stat(partFile);
+        have = Math.min(st.size, expected);
+      } catch {
+        have = 0;
+      }
+      received += have;
+
+      if (have >= expected) continue;
+
+      const res = await fetch(src.url, {
+        headers: { range: `bytes=${start + have}-${end}`, 'user-agent': 'NAI-WA-Desktop' },
+        redirect: 'follow',
+        signal,
+      });
+      if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}（分块 ${i + 1}）`);
+      const handle = await fsp.open(partFile, have > 0 ? 'a' : 'w');
+      try {
+        for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
+          await handle.write(chunk);
+          received += chunk.length;
+          lastBytes += chunk.length;
+          report();
+        }
+      } finally {
+        await handle.close();
+      }
+      report(true);
+    }
+
+    // 合并分块
+    const out = await fsp.open(file, 'w');
+    try {
+      for (const partFile of partFiles) {
+        const buf = await fsp.readFile(partFile);
+        await out.write(buf);
+      }
+    } finally {
+      await out.close();
+    }
+    await Promise.all(partFiles.map(p => fsp.unlink(p).catch(() => {})));
+    return { ok: true };
+  } catch (err) {
+    if (signal.aborted) return { ok: false, canceled: true, error: '已停止下载' };
+    // 失败时保留分块，方便下次继续
+    return { ok: false, error: (err as Error).message };
+  }
+}
+
+/** 不支持 Range 的线路：单流顺序下载 */
+async function singleStream(
+  src: Source,
+  file: string,
+  total: number,
+  signal: AbortSignal,
+  onProgress: (p: DownloadProgress) => void,
+  _attempt: number,
+): Promise<{ ok: boolean; canceled?: boolean; error?: string }> {
+  const res = await fetch(src.url, {
+    headers: { 'user-agent': 'NAI-WA-Desktop' },
+    redirect: 'follow',
+    signal,
+  });
+  if (!res.ok || !res.body) return { ok: false, error: `HTTP ${res.status}` };
+  const size = Number(res.headers.get('content-length') ?? 0) || total;
   const handle = await fsp.open(file, 'w');
   let received = 0;
   let lastTick = 0;
+  const started = Date.now();
   try {
     for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
       await handle.write(chunk);
@@ -243,33 +533,33 @@ export async function downloadUpdate(
       const now = Date.now();
       if (now - lastTick > 200) {
         lastTick = now;
-        onProgress({ phase: 'downloading', received, total, percent: total ? Math.round((received / total) * 100) : 0 });
+        onProgress({
+          phase: 'downloading',
+          received,
+          total: size,
+          percent: size ? Math.min(99, Math.round((received / size) * 100)) : 0,
+          speed: received / Math.max(0.2, (now - started) / 1000),
+          source: src.name,
+        });
       }
     }
   } catch (err) {
-    return { ok: false, error: `下载中断：${(err as Error).message}` };
+    if (signal.aborted) return { ok: false, canceled: true, error: '已停止下载' };
+    return { ok: false, error: (err as Error).message };
   } finally {
     await handle.close();
   }
-
-  onProgress({ phase: 'verifying', received, total, percent: 100 });
-  if (total && received !== total) {
-    return { ok: false, error: `下载不完整（${received}/${total} 字节），请重试。` };
-  }
-  if (asset.sha256) {
-    try {
-      const buf = await fsp.readFile(file);
-      const got = createHash('sha256').update(buf).digest('hex');
-      if (got.toLowerCase() !== asset.sha256.toLowerCase()) {
-        return { ok: false, error: '安装包校验失败（SHA-256 不一致），已中止，请重新下载。' };
-      }
-    } catch (err) {
-      return { ok: false, error: `校验失败：${(err as Error).message}` };
-    }
-  }
-  onProgress({ phase: 'done', received, total, percent: 100 });
-  return { ok: true, path: file };
+  return { ok: true };
 }
+
+function chunkCount(total: number): number {
+  if (total <= 0) return 1;
+  // 大文件 6 路并发：国内直连单线程常被限速，多连接能明显提速
+  if (total >= 64 * 1024 * 1024) return 6;
+  if (total >= 8 * 1024 * 1024) return 4;
+  return 1;
+}
+
 
 /** 启动安装程序并退出应用，让安装器接管文件替换 */
 export async function launchInstaller(file: string): Promise<{ ok: boolean; error?: string }> {

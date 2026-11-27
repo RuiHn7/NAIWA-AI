@@ -24,3 +24,6 @@ Thumbs.db
 # 本地环境
 .env
 .env.local
+
+# 调试脚本
+tmp-*.cjs

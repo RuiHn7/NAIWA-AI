@@ -208,10 +208,14 @@ export function currentVisionTarget(): { providerId: string; providerLabel: stri
 async function localUnderstand(input: { bytes: Buffer; mime: string; query: string; sourcePath?: string }): Promise<UnderstandResult> {
   const { perceive, assessImage, assessmentToText } = await import('./perceive');
   const { ocrImageFile } = await import('./ocr');
+  const { classifyImage, classifyToText } = await import('./classify');
 
   // 1) 本软件生成的图：历史里有提示词，直接说清「这是什么」
   const source = lookupGenerated(input.sourcePath);
-  // 2) 像素层：色彩 / 明暗 / 构图
+  // 2) 识别模型：离线 1000 类物体识别（回答「这是什么」的主力）
+  const cls = await classifyImage({ bytes: input.bytes });
+  const classified = cls.ok && cls.top?.length ? classifyToText(cls.top, input.query) : '';
+  // 3) 像素层：色彩 / 明暗 / 构图
   const percept = perceive({ bytes: input.bytes });
 
   // 3) 文字层：Windows 自带 OCR（离线）。优先用原始文件，字节来源则落成临时 PNG。
@@ -253,18 +257,22 @@ async function localUnderstand(input: { bytes: Buffer; mime: string; query: stri
   }
   for (const file of tempFiles) void fsp.unlink(file).catch(() => {});
 
-  if (!percept && !source && !ocrText) {
+  if (!percept && !source && !ocrText && !classified) {
     return { ok: false, error: `本机解不开这张图（${input.mime}）。可能是格式不支持或文件损坏；换一张 PNG / JPG 再试。` };
   }
 
   const assessment = assessImage({ percept, ocrText, ocrLines, ocrAvailable, source, query: input.query });
-  let text = assessmentToText(assessment);
+  let text = assessmentToText(assessment, classified);
+  if (!classified && !cls.ok && cls.error) {
+    text += `\n\n（识别模型这次没能加载：${cls.error}；像素与文字结果不受影响。）`;
+  }
   if (ocrNote) text += `\n\n（${ocrNote}；其余识图结果不受影响。）`;
+  const bits = ['识别模型', '像素', 'OCR'].filter((_, i) => (i === 0 ? !!classified : i === 1 ? !!percept : !!ocrAvailable));
   return {
     ok: true,
     text,
     provider: '本机',
-    model: source ? '图片历史 + 像素 + OCR' : '像素 + OCR',
+    model: source ? `图片历史 + ${bits.join(' + ')}` : bits.join(' + '),
   };
 }
 

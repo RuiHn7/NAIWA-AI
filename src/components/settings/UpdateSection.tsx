@@ -20,14 +20,23 @@ interface AppInfoLite {
 }
 
 interface Progress {
-  phase: 'downloading' | 'verifying' | 'done';
+  phase: 'probing' | 'downloading' | 'verifying' | 'done';
   received: number;
   total: number;
   percent: number;
+  speed?: number;
+  source?: string;
+  sources?: number;
 }
 
 function fmtMB(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function fmtSpeed(bps?: number): string {
+  if (!bps || bps <= 0) return '';
+  if (bps >= 1024 * 1024) return `${(bps / 1024 / 1024).toFixed(1)} MB/s`;
+  return `${Math.max(1, Math.round(bps / 1024))} KB/s`;
 }
 
 export function UpdateSection() {
@@ -43,6 +52,8 @@ export function UpdateSection() {
   const [version, setVersion] = useState('');
 
   const [downloading, setDownloading] = useState(false);
+  /** 用户点了「停止下载」：分块已保留，可以继续下 */
+  const [paused, setPaused] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null);
   const [downloaded, setDownloaded] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
@@ -81,6 +92,7 @@ export function UpdateSection() {
     setDownloaded(null);
     setProgress(null);
     setDownloadError(null);
+    setPaused(false);
   }, [update?.latest]);
 
   const run = async () => {
@@ -102,8 +114,9 @@ export function UpdateSection() {
   const download = async () => {
     if (!installer) return;
     setDownloading(true);
+    setPaused(false);
     setDownloadError(null);
-    setProgress({ phase: 'downloading', received: 0, total: installer.size, percent: 0 });
+    setProgress({ phase: 'probing', received: 0, total: installer.size, percent: 0 });
     try {
       const res = await invoke('update:download', {
         name: installer.name,
@@ -113,7 +126,11 @@ export function UpdateSection() {
       });
       if (res.ok && res.path) {
         setDownloaded(res.path);
+        setPaused(false);
         toast(t('安装包已下载，可以重启安装了'), 'ok');
+      } else if (res.canceled) {
+        // 用户主动停止：保留已下载分块，显示「继续下载 / 重新下载」
+        setPaused(true);
       } else {
         setDownloadError(res.error ?? t('下载失败'));
       }
@@ -122,6 +139,28 @@ export function UpdateSection() {
     } finally {
       setDownloading(false);
     }
+  };
+
+  /** 停止下载：主进程中止请求，已下分块留在临时目录，下次继续 */
+  const stop = async () => {
+    try {
+      await invoke('update:cancel', undefined);
+    } catch {
+      /* 主进程可能刚好下完 */
+    }
+    setDownloading(false);
+    setPaused(true);
+  };
+
+  /** 重新下载：先删掉原文件与所有分块，再从零开始 */
+  const redo = async () => {
+    if (!installer) return;
+    setDownloaded(null);
+    setProgress(null);
+    setPaused(false);
+    setDownloadError(null);
+    await invoke('update:reset', { name: installer.name }).catch(() => {});
+    await download();
   };
 
   const install = async () => {
@@ -142,6 +181,7 @@ export function UpdateSection() {
 
   const autoOn = settings?.autoUpdate !== false;
   const percent = progress?.percent ?? 0;
+  const speedText = fmtSpeed(progress?.speed);
 
   return (
     <Group title={t('版本')} desc={t('默认检查 GitHub 上 RuiHn7/NAIWA-AI 的最新版本。')}>
@@ -205,6 +245,22 @@ export function UpdateSection() {
                     <Icon name="download" size={12} />
                     {installing ? t('正在启动安装程序…') : t('重启并安装')}
                   </button>
+                ) : downloading ? (
+                  <button type="button" className="btn" data-size="sm" onClick={() => void stop()}>
+                    <Icon name="x" size={12} />
+                    {t('停止下载')}
+                  </button>
+                ) : paused ? (
+                  <button
+                    type="button"
+                    className="btn"
+                    data-variant="primary"
+                    data-size="sm"
+                    onClick={() => void download()}
+                  >
+                    <Icon name="download" size={12} />
+                    {t('继续下载')}
+                  </button>
                 ) : (
                   <button
                     type="button"
@@ -212,12 +268,20 @@ export function UpdateSection() {
                     data-variant="primary"
                     data-size="sm"
                     onClick={() => void download()}
-                    disabled={downloading}
                   >
                     <Icon name="download" size={12} />
-                    {downloading ? `${t('下载中')}${progress?.total ? ` ${percent}%` : '…'}` : t('下载并安装')}
+                    {t('下载并安装')}
                   </button>
                 )}
+
+                {/* 停止过或已下载完：给一个从零重来的入口（会先删掉旧文件和分块） */}
+                {!downloading && (paused || downloaded) && (
+                  <button type="button" className="btn" data-size="sm" onClick={() => void redo()}>
+                    <Icon name="refresh" size={12} />
+                    {t('重新下载')}
+                  </button>
+                )}
+
                 <button type="button" className="btn" data-size="sm" onClick={openUrl}>
                   <Icon name="external" size={12} />
                   {t('打开下载页')}
@@ -225,6 +289,11 @@ export function UpdateSection() {
                 {downloaded && (
                   <span className="dim" style={{ fontSize: 11.5 }}>
                     {t('安装包已就绪：点「重启并安装」会自动关闭本程序并启动安装器')}
+                  </span>
+                )}
+                {paused && !downloaded && (
+                  <span className="dim" style={{ fontSize: 11.5 }}>
+                    {t('已停止：已下载的进度会保留，点「继续下载」接着下，或「重新下载」从头来。')}
                   </span>
                 )}
               </div>
@@ -247,9 +316,11 @@ export function UpdateSection() {
                   style={{ width: `${progress.phase === 'verifying' ? 100 : percent}%` }}
                 />
                 <div className="update-progress-text">
-                  {progress.phase === 'verifying'
-                    ? t('校验安装包…')
-                    : `${t('已下载')} ${fmtMB(progress.received)}${progress.total ? ` / ${fmtMB(progress.total)}` : ''}`}
+                  {progress.phase === 'probing'
+                    ? t('正在测速，自动选择最快线路…')
+                    : progress.phase === 'verifying'
+                      ? t('校验安装包…')
+                      : `${t('已下载')} ${fmtMB(progress.received)}${progress.total ? ` / ${fmtMB(progress.total)}` : ''}${speedText ? ` · ${speedText}` : ''}${progress.source ? ` · ${progress.source}` : ''}`}
                 </div>
               </div>
             )}

@@ -817,6 +817,12 @@ export const EN: Record<string, string> = {
   发现新版本: 'New version found',
   下载并安装: 'Download and install',
   下载中: 'Downloading',
+  停止下载: 'Stop download',
+  继续下载: 'Resume download',
+  重新下载: 'Download again',
+  '正在测速，自动选择最快线路…': 'Testing routes, picking the fastest one…',
+  '已停止：已下载的进度会保留，点「继续下载」接着下，或「重新下载」从头来。':
+    'Stopped: downloaded parts are kept. Resume, or download again from scratch.',
   重启并安装: 'Restart and install',
   '正在启动安装程序…': 'Launching installer…',
   '校验安装包…': 'Verifying package…',
@@ -859,14 +865,14 @@ export const EN: Record<string, string> = {
   '已回到本机识图（默认）': 'Back to on-device vision (default)',
   '已启用多模态精度增强': 'Multimodal boost enabled',
   '点一下可以换一个多模态模型（可选）': 'Click to pick another multimodal model (optional)',
-  '软件内置解码、像素分析、离线 OCR 与生成历史反查，不需要任何配置':
-    'Built-in decoding, pixel analysis, offline OCR and image-history lookup — no setup needed',
-  '点这里可选接入一个多模态模型，提升照片里具体物体的识别精度':
-    'Click to optionally add a multimodal model for better recognition of objects in photos',
+  '软件内置离线识别模型（1000 类物体）、像素分析、离线 OCR 与生成历史反查，不需要任何配置':
+    'Built-in offline classifier (1000 object classes), pixel analysis, offline OCR and image-history lookup — no setup needed',
+  '点这里可选接入一个多模态模型，进一步提升精度':
+    'Click to optionally add a multimodal model for even higher accuracy',
   '软件内置本机识图已就绪：解码、像素分析、Windows 离线 OCR、生成历史反查，不需要任何配置。下面列出的多模态模型只是可选的精度增强 —— 指定后会在识图结果上再叠加一段画面描述。':
     'Built-in on-device vision is ready: decoding, pixel analysis, Windows offline OCR and image-history lookup — no setup needed. The multimodal models below are only an optional accuracy boost; picking one adds an extra description on top of the on-device result.',
-  '软件内置识图，无需配置：本地解码 + 像素分析判断图像类型，Windows 自带 OCR 离线读出图中文字，本软件生成的图还会回查生成历史拿到提示词与主体。这些文字事实交给当前主模型理解并回答，所以纯文本主模型也能识图。下面只在需要更高精度（例如辨认照片里的具体物体）时才用得上。':
-    'Vision is built in and needs no setup: local decoding + pixel analysis classify the image, Windows offline OCR reads the text, and images generated here are matched against their prompt and subject in image history. Those text facts go to the current chat model, so even a text-only model can understand images. The controls below only matter when you want higher accuracy, e.g. naming objects in photos.',
+  '软件内置识图，无需配置：内置离线识别模型（MobileNetV2，1000 类，本机推理）直接判断「这是什么物体」并给出置信度，像素分析判断图像类型，Windows 自带 OCR 离线读出图中文字，本软件生成的图还会回查生成历史拿到提示词与主体。这些事实交给当前主模型理解并回答，所以纯文本主模型也能识图。下面只在需要更高精度时才用得上。':
+    'Vision is built in and needs no setup: an offline classifier (MobileNetV2, 1000 classes, running on this machine) says what the object is and how confident it is, pixel analysis classifies the image, Windows offline OCR reads the text, and images generated here are matched against their prompt in image history. Those facts go to the current chat model, so even a text-only model can understand images. The controls below only matter for extra accuracy.',
   '没有指定多模态模型时，识图完全由软件在本机完成；如果以后想提升照片识别精度，可以接入一个多模态模型再在这里选。':
     'With no multimodal model selected, vision runs entirely on this machine. Add one later and pick it here if you want better photo recognition.',
   '打开后，每次出图都会再用本机识图核对一遍画面（叠加你选的多模态模型描述），主模型就能据此确认画出来的是什么，而不是回「我无法确认」。':

@@ -530,7 +530,7 @@ export function Composer() {
               title={
                 visionTarget
                   ? `${t('本机识图已就绪')} + ${visionTarget.providerLabel} · ${visionTarget.modelLabel}（${visionTarget.manual ? t('已手动指定') : t('自动挑选')}）\n${t('点一下可以换一个多模态模型（可选）')}`
-                  : `${t('本机识图已就绪')}：${t('软件内置解码、像素分析、离线 OCR 与生成历史反查，不需要任何配置')}\n${t('点这里可选接入一个多模态模型，提升照片里具体物体的识别精度')}`
+                  : `${t('本机识图已就绪')}：${t('软件内置离线识别模型（1000 类物体）、像素分析、离线 OCR 与生成历史反查，不需要任何配置')}\n${t('点这里可选接入一个多模态模型，进一步提升精度')}`
               }
               aria-label={t('识图')}
               onClick={e => openVision(e.currentTarget)}

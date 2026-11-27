@@ -48,9 +48,13 @@ const SUBJECT_RULES: { match: RegExp; kind: SubjectKind; label: string }[] = [
   { match: /(椅子|座椅|沙发椅|chair|stool)/i, kind: 'chair', label: '椅子' },
   { match: /(杯子|马克杯|咖啡杯|茶杯|水杯|瓷杯|杯|cup|mug)/i, kind: 'cup', label: '杯子' },
   { match: /(瓶子|酒瓶|花瓶|水瓶|bottle|vase)/i, kind: 'bottle', label: '瓶子' },
-  { match: /(篮球|足球|球体|圆球|球|ball|sphere)/i, kind: 'ball', label: '球体' },
+  { match: /(篮球|basketball)/i, kind: 'ball', label: '篮球' },
+  { match: /(足球|soccer|football)/i, kind: 'ball', label: '足球' },
+  { match: /(网球|tennis)/i, kind: 'ball', label: '网球' },
+  { match: /(排球|volleyball)/i, kind: 'ball', label: '排球' },
+  { match: /(球体|圆球|球|ball|sphere)/i, kind: 'ball', label: '球体' },
   { match: /(盒子|方块|立方体|纸箱|box|cube)/i, kind: 'box', label: '方块' },
-  { match: /(房子|小屋|房屋|别墅|木屋|house|cabin|cottage)/i, kind: 'house', label: '房子' },
+  { match: /(房子|小屋|房屋|砖房|平房|楼房|别墅|木屋|house|cabin|cottage|building)/i, kind: 'house', label: '房子' },
   { match: /(松树|大树|树木|树|tree)/i, kind: 'tree', label: '树' },
   { match: /(花朵|玫瑰|向日葵|花|flower|rose|tulip)/i, kind: 'flower', label: '花' },
   { match: /(猫|橘猫|小猫|猫咪|cat|kitten)/i, kind: 'cat', label: '猫' },
@@ -188,8 +192,42 @@ function ellipse(cv: Canvas, cx: number, cy: number, rx: number, ry: number, rgb
   }
 }
 
-/** 粗线（描边）：沿折线撒圆点，用来画提手、花茎、尾巴 */
-function stroke(cv: Canvas, pts: number[][], width: number, rgb: RGB, alpha = 1): void {
+/**
+ * 按像素给颜色的椭圆：shade 直接返回 RGB（球面法线 nx/ny/nz 可用来算纹理、沟槽、斑块），
+ * 返回 null 表示这个像素不上色。球类需要「橙色球面 + 黑色沟槽 + 白色缝线」这种多色叠加，
+ * 只靠亮度乘子（ellipse）做不到，所以单独留一条路径。
+ */
+function ellipseRGB(
+  cv: Canvas,
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  shade: (nx: number, ny: number, nz: number) => RGB | null,
+  alpha = 1,
+): void {
+  const x0 = Math.max(0, Math.floor(cx - rx));
+  const x1 = Math.min(cv.width - 1, Math.ceil(cx + rx));
+  const y0 = Math.max(0, Math.floor(cy - ry));
+  const y1 = Math.min(cv.height - 1, Math.ceil(cy + ry));
+  const feather = 1.2; // 只做 1px 抗锯齿；过大会在球边缘糊出一圈光晕
+  for (let y = y0; y <= y1; y += 1) {
+    for (let x = x0; x <= x1; x += 1) {
+      const nx = (x + 0.5 - cx) / rx;
+      const ny = (y + 0.5 - cy) / ry;
+      const d = Math.hypot(nx, ny);
+      if (d >= 1 + feather / Math.max(rx, ry)) continue;
+      const cover = d <= 1 ? 1 : Math.max(0, 1 - ((d - 1) * Math.max(rx, ry)) / feather);
+      if (cover <= 0) continue;
+      const nz = Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny));
+      const rgb = shade(nx, ny, nz);
+      if (!rgb) continue;
+      blend(cv, x, y, rgb, alpha * cover);
+    }
+  }
+}
+
+/** 粗线（描边）：沿折线撒圆点，用来画提手、花茎、尾巴 */function stroke(cv: Canvas, pts: number[][], width: number, rgb: RGB, alpha = 1): void {
   const r = Math.max(0.8, width / 2);
   for (let i = 0; i < pts.length - 1; i += 1) {
     const [ax, ay] = pts[i];
@@ -223,6 +261,89 @@ function contactShadow(cv: Canvas, cx: number, cy: number, rx: number, ry: numbe
   }
 }
 
+/* ------------------------------------------------------------ 表面纹理 */
+
+function smoothstep(t: number): number {
+  return t * t * (3 - 2 * t);
+}
+
+/** 整数格点哈希：同一坐标 + 同一 seed 永远给同一个 [0,1) */
+function thash(x: number, y: number, seed: number): number {
+  let h = Math.imul(x, 374761393) + Math.imul(y, 668265263) + Math.imul(seed, 1442695041);
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+function tnoise(x: number, y: number, seed: number): number {
+  const xi = Math.floor(x);
+  const yi = Math.floor(y);
+  const u = smoothstep(x - xi);
+  const v = smoothstep(y - yi);
+  const a = thash(xi, yi, seed);
+  const b = thash(xi + 1, yi, seed);
+  const c = thash(xi, yi + 1, seed);
+  const d = thash(xi + 1, yi + 1, seed);
+  return (a * (1 - u) + b * u) * (1 - v) + (c * (1 - u) + d * u) * v;
+}
+
+function tfbm(x: number, y: number, seed: number, octaves: number): number {
+  let sum = 0;
+  let amp = 1;
+  let norm = 0;
+  let freq = 1;
+  for (let i = 0; i < octaves; i += 1) {
+    sum += amp * tnoise(x * freq, y * freq, seed + i * 1013);
+    norm += amp;
+    amp *= 0.5;
+    freq *= 2;
+  }
+  return sum / (norm || 1);
+}
+
+/**
+ * 材质颗粒：把「纯色块」变成有表面的东西。
+ * scale 是纹理频率（越大颗粒越细），amp 是明暗起伏幅度。
+ * 返回 1 附近的亮度乘子，直接乘进 shade。
+ */
+function grain(u: number, v: number, scale: number, seed: number, amp: number, octaves = 3): number {
+  const n = tfbm(u * scale, v * scale, seed, octaves) - 0.5;
+  return 1 + n * 2 * amp;
+}
+
+/** 木纹：沿 u 方向的长条纹 + 年轮扰动 */
+function woodGrain(u: number, v: number, seed: number, amp = 0.16): number {
+  const warp = tfbm(u * 3, v * 9, seed + 11, 3) * 0.6;
+  const rings = Math.sin((v * 26 + warp * 5) * Math.PI) * 0.5 + 0.5;
+  const fine = tfbm(u * 40, v * 160, seed + 23, 2) - 0.5;
+  return 1 + (rings - 0.5) * amp + fine * amp * 0.8;
+}
+
+/** 砖纹：水平砖缝 + 交错竖缝 */
+function brickGrain(u: number, v: number, seed: number): number {
+  const rows = 7;
+  const cols = 4;
+  const fy = v * rows;
+  const row = Math.floor(fy);
+  const fx = u * cols + (row % 2 ? 0.5 : 0);
+  const col = Math.floor(fx);
+  const dx = Math.abs(fx - Math.round(fx));
+  const dy = Math.abs(fy - Math.round(fy));
+  const mortar = Math.min(dx / 0.06, dy / 0.12);
+  const n = tfbm(u * 30, v * 30, seed + col * 7 + row * 13, 2) - 0.5;
+  // 缝隙处压暗，砖面有轻微色差
+  return (mortar < 1 ? 0.78 + 0.22 * mortar : 1) * (1 + n * 0.14);
+}
+
+/** 球面沟槽：几个大圆（过球心的平面）投影到球面上，得到篮球那种十字 + 侧弧 */
+function grooveAmount(nx: number, ny: number, nz: number, width: number): number {
+  const circles = [Math.abs(ny), Math.abs(nx), Math.abs(nx - nz), Math.abs(nx + nz)];
+  let m = 0;
+  for (const d of circles) {
+    if (d < width) m = Math.max(m, 1 - d / width);
+  }
+  return m;
+}
+
 /* ------------------------------------------------------------ 通用光照 */
 
 /** 左上主光的朗伯近似：法线朝左上最亮 */
@@ -245,6 +366,10 @@ interface Ctx {
   /** 主体高度 */
   h: number;
   tint: RGB;
+  /** 主体名（篮球 / 足球 / 桌子…）：同一 kind 下按材质细分纹理 */
+  label: string;
+  /** 用户是否点名了颜色：点名了就尊重用户，不套材质默认色 */
+  hasColor: boolean;
 }
 
 function leg(c: Ctx, x: number, top: number, bottom: number, w: number, rgb: RGB): void {
@@ -270,7 +395,12 @@ function drawTable(c: Ctx): void {
     [cx + halfW, topY],
     [cx + halfW * 0.86, topY + h * 0.16],
     [cx - halfW * 0.86, topY + h * 0.16],
-  ], tint, 1, (x, y) => 0.95 + 0.35 * (1 - (y - topY) / (h * 0.16)));
+  ], tint, 1, (x, y) => {
+    const u = (x - (cx - halfW)) / (2 * halfW);
+    const v = (y - topY) / (h * 0.16);
+    // 木纹 + 细颗粒：桌面不是一块纯色板
+    return (0.95 + 0.35 * (1 - v)) * woodGrain(u, v, 71, 0.15) * grain(u, v, 26, 91, 0.05, 2);
+  });
   poly(cv, [
     [cx - halfW * 0.86, topY + h * 0.16],
     [cx + halfW * 0.86, topY + h * 0.16],
@@ -376,14 +506,96 @@ function drawBottle(c: Ctx): void {
 }
 
 function drawBall(c: Ctx): void {
-  const { cv, cx, baseY, h, tint } = c;
-  const r = h * 0.42;
+  const { cv, cx, baseY, h, label } = c;
+  const r = h * 0.5;
   const cy = baseY - r;
-  ellipse(cv, cx, cy, r, r, tint, 1, (nx, ny) => {
-    const nz = Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny));
-    const d = lit(nx, ny, nz);
-    const spec = Math.exp(-(((nx + 0.42) ** 2 + (ny + 0.5) ** 2) / 0.02)) * 0.55;
-    return d + spec;
+
+  // 材质基色：用户点名颜色优先，否则按球类给默认色
+  let base: RGB = c.tint;
+  if (!c.hasColor) {
+    if (label === '足球') base = [0.72, 0.72, 0.7];
+    else if (label === '网球') base = [0.46, 0.57, 0.04];
+    else if (label === '排球') base = [0.66, 0.64, 0.6];
+    else base = [0.44, 0.14, 0.022];
+  }
+
+  const seed = 613;
+  const groove: RGB = [0.012, 0.01, 0.009];
+  const seam: RGB = [0.8, 0.79, 0.74];
+  const isVolley = label === '排球';
+  const bouncy = label === '篮球' || label === '球体' || label === '网球';
+
+  // 足球斑块方向：球面均匀分布（斐波那契点），投影后可见 5-7 块，接近真实拼块
+  const spotDirs: number[][] = Array.from({ length: 12 }, (_, i) => {
+    const y = 1 - (i / 11) * 2;
+    const rad = Math.sqrt(Math.max(0, 1 - y * y));
+    const phi = i * 2.399963229728653;
+    return [Math.cos(phi) * rad, y, Math.sin(phi) * rad];
+  });
+
+  ellipseRGB(cv, cx, cy, r, r, (nx, ny, nz) => {
+    // 凹凸颗粒：用噪声轻微扰动球面法线，颗粒才有真实的明暗起伏
+    let lx = nx;
+    let ly = ny;
+    let lnz = nz;
+    if (bouncy && nz > 0.3) {
+      const bump = 0.22;
+      lx = nx + (tfbm(nx * 24 + 3.1, ny * 24 + 7.7, seed, 3) - 0.5) * bump;
+      ly = ny + (tfbm(nx * 24 + 11.3, ny * 24 + 2.9, seed + 5, 3) - 0.5) * bump;
+      lnz = Math.sqrt(Math.max(0.05, 1 - lx * lx - ly * ly));
+    }
+
+    // 基础明暗：左上主光 + 边缘环境光遮蔽 + 高光
+    let k = lit(lx, ly, lnz);
+    k *= 0.52 + 0.48 * nz ** 0.5;
+    k += Math.exp(-(((nx + 0.4) ** 2 + (ny + 0.46) ** 2) / 0.026)) * 1.25;
+
+    // 材质颗粒：皮面细纹 / 网球绒毛 / 合成革
+    if (bouncy) {
+      k *= grain(nx + 1.7, ny + 1.7, 120, seed + 9, 0.28, 2);
+      k *= grain(nx + 4.3, ny + 4.3, 6, seed + 3, 0.1, 3);
+    } else {
+      k *= grain(nx + 2.1, ny + 2.1, 70, seed, 0.06, 2);
+    }
+
+    // 篮球 / 排球：大圆沟槽（球面投影出的十字 + 侧弧）
+    if (label === '篮球' || isVolley) {
+      const g = grooveAmount(nx, ny, nz, isVolley ? 0.022 : 0.03);
+      if (g > 0) {
+        if (isVolley) {
+          const w = 0.62 + 0.38 * (1 - g);
+          return [seam[0] * w, seam[1] * w, seam[2] * w];
+        }
+        // 沟槽中心接近纯黑（线性空间要很小才够黑），靠外缘才回一点点亮
+        const v = 0.0025 + 0.0055 * (1 - g) ** 2;
+        return [groove[0] + v, groove[1] + v * 0.85, groove[2] + v * 0.7];
+      }
+    }
+
+    // 足球：黑色拼块 + 块间浅灰缝线
+    if (label === '足球') {
+      let best = -1;
+      for (const d of spotDirs) best = Math.max(best, nx * d[0] + ny * d[1] + nz * d[2]);
+      if (best > 0.925) return [0.022, 0.022, 0.024];
+      if (best > 0.9) {
+        const w = 1 - (best - 0.9) / 0.025;
+        const c = 0.24 + 0.16 * w;
+        return [c, c, c * 0.98];
+      }
+    }
+
+    // 网球：白色弧形缝线
+    if (label === '网球') {
+      const band = 0.62 * Math.sqrt(Math.max(0.05, 1 - ny * ny * 0.8));
+      const d = Math.abs(Math.abs(nx) - band);
+      if (d < 0.035 && Math.abs(ny) < 0.92) {
+        const w = 0.68 + 0.32 * (1 - d / 0.035);
+        return [seam[0] * w, seam[1] * w, seam[2] * w];
+      }
+    }
+
+    const kk = Math.min(1.8, Math.max(0, k));
+    return [base[0] * kk, base[1] * kk, base[2] * kk];
   });
 }
 
@@ -425,7 +637,12 @@ function drawHouse(c: Ctx): void {
     [cx + w, wallTop],
     [cx + w, baseY],
     [cx - w, baseY],
-  ], tint, 1, (x) => 0.9 + 0.3 * (1 - (x - (cx - w)) / (2 * w)));
+  ], tint, 1, (x, y) => {
+    const u = (x - (cx - w)) / (2 * w);
+    const v = (y - wallTop) / Math.max(1, baseY - wallTop);
+    // 墙面：砖缝 + 抹灰颗粒，避免一整片死白
+    return (0.9 + 0.3 * (1 - u)) * brickGrain(u, v, 37) * grain(u, v, 18, 55, 0.04, 2);
+  });
   // 屋顶
   poly(cv, [
     [cx - w * 1.16, wallTop],
@@ -666,14 +883,21 @@ function drawCar(c: Ctx): void {
 
 function describeScene(subject: Subject, tint: RGB): string {
   const colorText = subject.colorName ? `，主色偏${subject.colorName}` : '';
+  const ballText = (): string => {
+    if (subject.label === '篮球') return '一颗篮球：橙色皮面 + 荔枝纹颗粒 + 黑色橡胶沟槽（十字与两侧弧线）+ 左上高光 + 地面投影';
+    if (subject.label === '足球') return '一颗足球：白色球面 + 黑色五边形斑块 + 球面明暗 + 地面投影';
+    if (subject.label === '网球') return '一颗网球：黄绿色绒面 + 白色弧形缝线 + 左上高光 + 地面投影';
+    if (subject.label === '排球') return '一颗排球：浅色球面 + 白色拼缝 + 球面明暗 + 地面投影';
+    return '一个球体：球面明暗过渡 + 表面颗粒 + 左上高光 + 地面投影';
+  };
   const base: Record<SubjectKind, string> = {
-    table: '一张长方形桌子：透视桌面 + 前缘厚度 + 四条桌腿，桌下有接触阴影',
+    table: '一张长方形桌子：透视桌面 + 前缘厚度 + 四条桌腿，桌面有木纹与细颗粒',
     chair: '一把椅子：靠背、座面与四条腿，侧向受光',
     cup: '一只带提手的杯子：杯口椭圆内壁、杯身斜面与柔和投影',
     bottle: '一只瓶子：瓶身收肩到瓶颈，带竖向高光与瓶盖',
-    ball: '一个球体：球面明暗过渡 + 左上高光 + 地面投影',
-    box: '一个立方体：顶面 / 正面 / 侧面三面受光不同',
-    house: '一栋房子：墙体 + 双坡屋顶 + 门与两扇窗',
+    ball: ballText(),
+    box: '一个立方体：顶面 / 正面 / 侧面三面受光不同，表面有细微颗粒',
+    house: '一栋房子：墙体（带砖缝）+ 双坡屋顶 + 门与两扇窗',
     tree: '一棵树：树干与四团树冠，冠层有球面明暗',
     flower: '一朵花：花茎、叶片与六片花瓣围成的花冠',
     cat: '一只猫：身体、四条腿、三角耳与眼睛，尾巴向右上翘起',
@@ -710,8 +934,18 @@ export function drawSubject(lin: Float32Array, opts: DrawOptions): DrawResult {
   const baseY = Math.min(height * 0.94, height * (horizon + 0.1));
   // 高瘦物体（瓶子 / 人物 / 树）给更高的尺寸，扁平物体（桌子 / 车）给小一点
   const tall = subject.kind === 'bottle' || subject.kind === 'person' || subject.kind === 'tree' || subject.kind === 'flower';
-  const h = height * (tall ? 0.46 : 0.4);
-  const ctx: Ctx = { cv, cx: width * 0.5, baseY, h, tint };
+  // 球类给更大画幅：小圆球在 1024 画布上容易显得空
+  const ratio = subject.kind === 'ball' ? 0.56 : tall ? 0.46 : 0.4;
+  const h = height * ratio;
+  const ctx: Ctx = {
+    cv,
+    cx: width * 0.5,
+    baseY,
+    h,
+    tint,
+    label: subject.label,
+    hasColor: !!subject.color,
+  };
 
   contactShadow(cv, ctx.cx, baseY, h * (subject.kind === 'car' ? 0.78 : 0.5), h * 0.075, 0.4);
 
