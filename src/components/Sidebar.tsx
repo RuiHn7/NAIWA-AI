@@ -27,9 +27,6 @@ const ORDER = ['今天', '昨天', '本周', '更早'] as const;
 /** 主进程新建会话时写的中文默认标题；显示时换成当前语言 */
 const DEFAULT_TITLE = '新对话';
 
-/** 版本更新的仓库地址（侧栏「新版本」胶囊点开就是这里） */
-const REPO_URL = 'https://github.com/RuiHn7/NAIWA-AI';
-
 function highlightText(title: string, query: string) {
   const q = query.trim();
   if (!q) return title;
@@ -530,16 +527,13 @@ export function Sidebar({ onCloseDrawer }: SidebarProps) {
         })}
       </div>
 
-      {/* 有新版时：用户卡片正上方一条蓝色胶囊，点开就去 GitHub 看 release */}
+      {/* 有新版时：用户卡片正上方一条蓝色胶囊，点开进软件更新设置页（应用内下载安装，不再跳网页） */}
       {update?.hasUpdate && update.latest && (
         <button
           type="button"
           className="sb-update"
-          onClick={() => {
-            const url = update.url ?? REPO_URL;
-            void invoke('workspace:open-path', { path: url });
-          }}
-          title={`${t('新版本')} ${update.latest}`}
+          onClick={() => openSettings('update')}
+          title={`${t('新版本')} ${update.latest}\n${t('点开进入软件更新页，应用内下载并安装')}`}
         >
           <Icon name="download" size={12} />
           <span className="sb-update-text">{t('新版本')}</span>

@@ -812,6 +812,7 @@ export const EN: Record<string, string> = {
   '默认检查 GitHub 上 RuiHn7/NAIWA-AI 的最新版本。':
     'Checks the latest version of RuiHn7/NAIWA-AI on GitHub by default.',
   新版本: 'New version',
+  '点开进入软件更新页，应用内下载并安装': 'Opens the software update page — download and install in-app',
   忽略: 'Dismiss',
   发现新版本: 'New version found',
   下载并安装: 'Download and install',

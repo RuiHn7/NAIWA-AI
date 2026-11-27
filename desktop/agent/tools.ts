@@ -885,7 +885,11 @@ export const TOOLS: ToolDef[] = [
       const hint = builtinHint(result.builtinTheme, result.builtinSubject);
       if (hint) lines.push('', hint);
       lines.push('', ...(await visualCheck(files, prompt, result.builtinScene)));
-      lines.push('', '把图片路径告诉用户，需要调整就改写 prompt 再调用一次。');
+      lines.push(
+        '',
+        '把图片路径告诉用户，需要调整就改写 prompt 再调用一次。',
+        '注意：画面信息以本结果里的「画面自述 / 画面核对」为准，如实向用户描述；识图、看图是软件内置能力，禁止建议用户接入任何视觉模型或识图模型。',
+      );
       return { text: lines.join('\n'), filePath: files[0], files };
     },
   },
