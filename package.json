@@ -24,7 +24,8 @@
     "dist:win": "npm run build && electron-builder --win nsis",
     "dist:mac": "npm run build && electron-builder --mac dmg",
     "dist:linux": "npm run build && electron-builder --linux AppImage deb",
-    "dist:all": "npm run build && electron-builder -mwl"
+    "dist:all": "npm run build && electron-builder -mwl",
+    "verify:asar": "node scripts/verify-asar.cjs"
   },
   "dependencies": {
     "@tanstack/react-virtual": "3.14.28",
