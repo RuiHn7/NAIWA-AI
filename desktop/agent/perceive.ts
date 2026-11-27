@@ -1,5 +1,5 @@
 /* ============================================================================
- * desktop/agent/perceive.ts —— 软件内置的本机识图（不联网、不依赖任何外部模型）
+ * desktop/agent/perceive.ts —— 软件内置的本机识图（不依赖任何外部模型）
  *
  * 分两步：
  *   1) perceive()：Electron nativeImage 解码，统计尺寸、明暗、对比度、饱和度、
@@ -455,7 +455,7 @@ export function assessImage(input: {
  */
 export function assessmentToText(a: ImageAssessment, classified?: string): string {
   const out: string[] = [];
-  out.push('识图结果（软件内置 · 本机完成，不联网、不需要配置任何视觉模型）：');
+  out.push('识图结果（软件内置 · 本机完成）：');
   out.push('');
   if (classified) {
     out.push(classified);
@@ -471,7 +471,7 @@ export function assessmentToText(a: ImageAssessment, classified?: string): strin
   for (const c of a.clues) out.push(`- ${c}`);
   out.push('');
   if (a.ocrText) {
-    out.push(`【图里的文字】本机 OCR 读到 ${a.ocrLines} 行（Windows 自带识别引擎，离线，可能有错字）：`);
+    out.push(`【图里的文字】本机 OCR 读到 ${a.ocrLines} 行（Windows 自带识别引擎，可能有错字）：`);
     out.push(a.ocrText);
   } else if (a.ocrAvailable) {
     out.push('【图里的文字】本机 OCR 没有识别到文字。');
@@ -486,7 +486,7 @@ export function assessmentToText(a: ImageAssessment, classified?: string): strin
   out.push('- 上面这些是软件从图片里读到的**事实**：图里是什么物体、写了什么文字、是什么类型的图、如果是本软件生成的还知道当时的提示词。直接基于它们理解并回答用户；禁止说「我看不了图」「无法确认」「需要接入视觉模型」「请到设置里选识图模型」。');
   out.push('- 用户问「这是什么」→ 优先用【这是什么】的识别结论（带置信度）作答，再补充【图像类型】【图里的文字】。识别置信度高就直接给结论；偏低就说「看起来像 X」，不要装作确定。');
   out.push('- 用户问「里面有没有文字 / 写了什么」→ 直接引用【图里的文字】的原文，并说明是本机 OCR 离线读出的。');
-  out.push('- 用户问「你是怎么识图的」→ 如实说明：软件先用内置的离线识别模型（MobileNetV2，1000 类，本机推理）判断这是什么物体，再用像素分析判断图像类型与版面，用 Windows 自带 OCR 读出图中文字，如果这张图是软件自己生成的还会回查生成历史拿到提示词；这些事实交给当前对话的主模型理解并回答。整个过程不联网、不需要用户接任何外部视觉模型。');
+  out.push('- 用户问「你是怎么识图的」→ 如实说明：先用本机的识别模型判断这是什么物体，再用像素分析判断图像类型与版面，用 OCR 读出图中文字，如果这张图是软件自己生成的还会回查生成历史拿到提示词；然后交给当前对话的主模型理解并回答。');
   out.push('- 若【这是什么】置信度偏低且图里没有文字，就如实说「看起来像 X，但不确定」，并请用户用一句话补充来历或想确认什么；不要说「认不出图片内容」，更不要让用户去配置模型。');
   if (a.query) out.push(`- 用户这次的原话是「${a.query.slice(0, 80)}」，优先回答这个问题。`);
   return out.join('\n');

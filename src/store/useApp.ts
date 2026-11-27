@@ -923,11 +923,6 @@ function wireEvents() {
 
       case 'artifact': {
         if (!isActive) return;
-        const name = event.path.split(/[\\/]/).pop() ?? event.path;
-        // 图片已经在工具卡里内联显示了，再弹 toast 只是噪音
-        if (!/\.(png|jpe?g|webp|gif|bmp|avif|svg)$/i.test(event.path)) {
-          get().toast(`已生成文件：${name}`, 'ok');
-        }
         // 产物落盘了 → 让右栏「本会话产物」重新扫一次目录
         set(s => ({ artifactsVersion: s.artifactsVersion + 1 }));
         void (async () => {

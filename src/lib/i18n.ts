@@ -842,10 +842,10 @@ export const EN: Record<string, string> = {
   内置渲染: 'Built-in renderer',
   '内置渲染（本地）': 'Built-in renderer (local)',
   '内置渲染（本地，不需要 Key）': 'Built-in renderer (local, no key needed)',
-  '内置渲染是本地程序化绘制：不联网、不要 Key，画星空、山脊、海面倒影、抽象光晕最好用。':
-    'The built-in renderer draws locally: no network, no key. It is best at starry skies, ridges, sea reflections and soft abstract glows.',
-  '内置渲染是本地程序化绘制：不联网、不要 Key，按提示词挑「夜空银河 / 黄昏 / 白天 / 山脊 / 海面 / 静物」六套画面模板，适合风景和氛围底图。它画不出具体的人、动物、产品和文字，要那些请接入真实出图后端。':
-    'The built-in renderer draws locally: no network, no key. It picks one of six scene templates (night sky, dusk, daylight, ridges, sea, studio) based on the prompt — good for scenery and mood backgrounds. It cannot draw specific people, animals, products or text; connect a real image backend for those.',
+  '内置渲染是本地程序化绘制，不需要 Key，适合风景和氛围底图。它画不出具体的人、动物、产品和文字，要那些请接入真实出图后端。':
+    'The built-in renderer draws locally and needs no key. It is good for scenery and mood backgrounds, but cannot draw specific people, animals, products or text — connect a real image backend for those.',
+  '内置渲染是本地程序化绘制，不需要 Key，按提示词里的场景、光线和主体生成画面，适合风景和氛围底图。它画不出具体的人、动物、产品和文字，要那些请接入真实出图后端。':
+    'The built-in renderer draws locally and needs no key. It builds the scene from the setting, lighting and subject in your prompt — good for scenery and mood backgrounds. It cannot draw specific people, animals, products or text; connect a real image backend for those.',
   '默认用内置渲染在本地画，产物落在当前会话的 artifacts/images 里。':
     'Draws locally with the built-in renderer by default; outputs land in this chat’s artifacts/images.',
 
@@ -885,7 +885,7 @@ export const EN: Record<string, string> = {
   '本地视觉模型已就绪': 'Local vision model is ready',
   '识图已就绪': 'Vision is ready',
   '点一下可以换回内置识图或换一个多模态模型': 'Click to switch back to built-in vision or pick another multimodal model',
-  '本地视觉模型（离线）': 'Local vision model (offline)',
+  '本地视觉模型（本机）': 'Local vision model (on-device)',
   '用本地视觉模型识图': 'Use the local vision model for images',
   '本地视觉模型下载完成': 'Local vision model downloaded',
   '已停止下载，已下载的部分保留，可继续': 'Download stopped; partial file kept for resuming',
@@ -909,12 +909,12 @@ export const EN: Record<string, string> = {
   加载中: 'Starting',
   '已加载，可识图': 'Loaded — ready for images',
   异常: 'Error',
-  '安装包只带推理运行时（约 70MB），模型在第一次下载后长期留在本机，之后完全离线识图：描述画面内容、读图中文字、回答「这是什么」。不下载也照样能用原来的本机识图。':
-    'The installer only carries the runtime (≈70 MB). The model is downloaded once, stays on this machine, and then runs fully offline: describing scenes, reading text in images, answering "what is this". Without it, the built-in classifier and OCR still work.',
+  '安装包只带推理运行时（约 70MB），模型下载后长期留在本机，识图在本机完成，不依赖外部接口：描述画面内容、读图中文字、回答「这是什么」。不下载也照样能用原来的本机识图。':
+    'The installer only carries the runtime (≈70 MB). The model is downloaded once and stays on this machine, with vision running on-device and no external API needed: describing scenes, reading text in images, answering "what is this". Without it, the built-in classifier and OCR still work.',
   '本地视觉模型之外再加一层': 'One more optional layer on top of the local model',
-  '识图优先用上面的本地视觉模型（装好模型后完全离线，能描述画面、读文字）。这里的云端多模态模型是可选的第二层：指定后会优先调用它，失败再自动回落到本地视觉模型与本机分类 + OCR，所以不会因为云端不可用就没法识图。':
-    'Vision uses the local model above first (fully offline once downloaded). This cloud multimodal model is an optional second layer: when set it is tried first, and any failure falls back to the local model plus classifier and OCR, so a cloud outage never disables vision.',
-  'Qwen2.5-VL-3B 在本机离线推理，能描述画面、读图中文字': 'Qwen2.5-VL-3B runs offline on this machine and can describe scenes and read text',
+  '识图优先用上面的本地视觉模型（装好模型后在本机推理，能描述画面、读文字）。这里的云端多模态模型是可选的第二层：指定后会优先调用它，失败再自动回落到本地视觉模型与本机分类 + OCR，所以不会因为云端不可用就没法识图。':
+    'Vision uses the local model above first (runs on this machine once downloaded, describing scenes and reading text). This cloud multimodal model is an optional second layer: when set it is tried first, and any failure falls back to the local model plus classifier and OCR, so a cloud outage never disables vision.',
+  'Qwen2.5-VL-3B 在本机推理，能描述画面、读图中文字': 'Qwen2.5-VL-3B runs on this machine and can describe scenes and read text',
   '点这里可以换成云端多模态模型，进一步提升精度': 'Click to switch to a cloud multimodal model for extra accuracy',
   '内置识图已就绪': 'Built-in vision is ready',
   '离线分类（1000 类）、像素分析、离线 OCR 与生成历史反查，不需要任何配置':

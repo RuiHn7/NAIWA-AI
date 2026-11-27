@@ -6,7 +6,7 @@
  *   · 像素分析（尺寸 / 明暗 / 主色 / 版面）
  *   · Windows 自带 OCR 离线读出图中文字
  *   三者合成一段「识图报告」，交给当前会话里已经在跑的主模型理解并回答。
- *   全程不联网、不需要 Key、不需要用户配置任何外部视觉模型。
+ *   本机路径不需要 Key，也不需要用户额外配置视觉模型（想更准可以另接多模态）。
  *
  * 可选增强：若用户在设置里额外指定了多模态模型，会在本机识图结果之上
  * 再叠加一段该模型的画面描述；外部调用失败也不影响本机识图结果。
@@ -205,7 +205,7 @@ export function currentVisionTarget(): { providerId: string; providerLabel: stri
 /**
  * 软件内置的本机识图 —— 主路径，任何时候都可用，不需要任何外部服务。
  * 把「生成历史 + 像素统计 + 离线 OCR」合成一段识图报告，交给主模型理解并回答。
- * 这三样都不联网、不需要 Key，属于软件自身能力。
+ * 这三样都由软件自身在本机完成。
  */
 async function localUnderstand(input: { bytes: Buffer; mime: string; query: string; sourcePath?: string }): Promise<UnderstandResult> {
   const { perceive, assessImage, assessmentToText } = await import('./perceive');

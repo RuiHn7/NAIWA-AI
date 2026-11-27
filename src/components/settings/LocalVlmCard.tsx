@@ -112,7 +112,7 @@ export function LocalVlmCard() {
 
   return (
     <Card
-      title={t('本地视觉模型（离线）')}
+      title={t('本地视觉模型（本机）')}
       sub={
         <span className="dim" style={{ fontSize: 11.5 }}>
           Qwen2.5-VL-3B · {ready ? fmtGB(meta?.bytes ?? 0) : t('未下载')}
@@ -125,7 +125,7 @@ export function LocalVlmCard() {
       }
     >
       <div className="setting-hint" style={{ textAlign: 'left', marginBottom: 10 }}>
-        {t('安装包只带推理运行时（约 70MB），模型在第一次下载后长期留在本机，之后完全离线识图：描述画面内容、读图中文字、回答「这是什么」。不下载也照样能用原来的本机识图。')}
+        {t('安装包只带推理运行时（约 70MB），模型下载后长期留在本机，识图在本机完成，不依赖外部接口：描述画面内容、读图中文字、回答「这是什么」。不下载也照样能用原来的本机识图。')}
       </div>
 
       <Row label={t('用本地视觉模型识图')}>

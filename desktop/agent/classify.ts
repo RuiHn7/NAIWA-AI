@@ -328,7 +328,7 @@ export function classifyToText(top: ClassifyItem[], query?: string): string {
   const best = top[0];
   if (!best) return '';
   const pct = (p: number) => `${(p * 100).toFixed(p >= 0.1 ? 0 : 1)}%`;
-  const lines = ['【这是什么】软件内置的离线识别模型（MobileNetV2，1000 类，本机推理）判断：'];
+  const lines = ['【这是什么】软件内置的分类模型（MobileNetV2，1000 类，本机推理）判断：'];
   lines.push(`- 最可能：${best.zh}（${pct(best.prob)}）${best.zh !== best.label ? ` · ${best.label}` : ''}`);
   const others = top.slice(1, 4).filter(t => t.prob >= 0.03);
   if (others.length) {

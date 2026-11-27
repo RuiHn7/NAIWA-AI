@@ -13,6 +13,7 @@ import { getSettings } from '../store/settings';
 import { requestApproval, riskOfPath } from './permissions';
 import { runCode, runCommand, runtimeInfo, installHint } from './sandbox';
 import { getWorkspace, listWorkspaceFiles } from '../store/workspaces';
+import { searchWeb } from './websearch';
 import { chatArtifacts, chatFiles, scratchDir, workspaceArtifacts } from '../store/paths';
 
 export interface ToolContext {
@@ -205,19 +206,7 @@ function execText(
 /* ------------------------------------------------------------------ 联网搜索 */
 
 async function webSearch(query: string, signal: AbortSignal): Promise<string> {
-  const settings = getSettings();
-  const endpoint = settings.webSearchEndpoint.trim();
-  if (!endpoint) {
-    return `联网搜索未配置。请在「设置 → 接入模型」下方的搜索接口里填写 endpoint（支持返回 JSON 数组的自建搜索服务），或直接告诉我你已有的资料。查询词：${query}`;
-  }
-  try {
-    const url = endpoint.includes('{{q}}') ? endpoint.replace('{{q}}', encodeURIComponent(query)) : `${endpoint}${endpoint.includes('?') ? '&' : '?'}q=${encodeURIComponent(query)}`;
-    const response = await fetch(url, { signal });
-    const text = await response.text();
-    return text.slice(0, 6000);
-  } catch (err) {
-    return `搜索失败：${(err as Error).message}`;
-  }
+  return searchWeb(query, getSettings().webSearchEndpoint, signal);
 }
 
 /* ------------------------------------------------------------------ 网页阅读 */
@@ -651,7 +640,8 @@ export const TOOLS: ToolDef[] = [
   {
     name: 'web_search',
     label: '联网搜索',
-    description: '联网检索信息。返回搜索结果摘要，适合在需要最新资料时使用。',
+    description:
+      '联网检索信息，直接抓取实时网页结果（内置搜索，无需任何配置）。返回标题、链接与摘要，适合查询新闻、价格、文档、时效性资料。',
     parameters: {
       type: 'object',
       properties: { query: { type: 'string', description: '检索关键词' } },
@@ -897,7 +887,7 @@ export const TOOLS: ToolDef[] = [
     name: 'image_understand',
     label: '图片解析',
     description:
-      '看懂一张图片：说出「这是什么」、描述画面内容、提取图中所有文字、识别报错截图、解读界面信息。识图完全内置：优先用随软件分发的本地视觉模型（Qwen2.5-VL-3B，模型下载后在本机离线推理，能描述任意画面、逐字读图中文字），模型未下载或加载失败时自动回落到离线分类（MobileNetV2，1000 类）+ 像素分析 + Windows OCR，本软件生成的图还会回查生成历史拿到提示词与主体。返回一段可直接依据的识图报告，不需要用户配置任何视觉模型。用户上传图片并要求看图时必须先调用本工具，拿到结果后再回答；禁止在没有调用的情况下编造图片内容，也禁止说「看不了图 / 需要接视觉模型」。',
+      '看懂一张图片：说出「这是什么」、描述画面内容、提取图中所有文字、识别报错截图、解读界面信息。识图完全内置：优先用随软件分发的本地视觉模型（Qwen2.5-VL-3B，模型下载后在本机运行，能描述任意画面、逐字读图中文字），模型未下载或加载失败时自动回落到分类（MobileNetV2，1000 类）+ 像素分析 + OCR，本软件生成的图还会回查生成历史拿到提示词与主体。返回一段可直接依据的识图报告，默认不需要用户额外配置。用户上传图片并要求看图时必须先调用本工具，拿到结果后再回答；禁止在没有调用的情况下编造图片内容，也禁止说「看不了图」。',
     parameters: {
       type: 'object',
       properties: {
