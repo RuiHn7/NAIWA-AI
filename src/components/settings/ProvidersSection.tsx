@@ -11,6 +11,7 @@ import { useApp } from '@/store/useApp';
 import { useT } from '@/lib/i18n';
 import { formatContext } from '@/lib/format';
 import { Card, Empty, Group, Row, Switch } from './ui';
+import { LocalVlmCard } from './LocalVlmCard';
 import type { ProviderConfig, ProviderKind, RemoteModel, ThinkingLevel } from '@shared/types';
 
 const KIND_LABEL: Record<ProviderKind, string> = {
@@ -468,10 +469,13 @@ export function ProvidersSection() {
         </button>
       </div>
 
-      {/* 底部：识图 —— 默认走软件内置的本机识图，下面只是可选的精度增强 */}
-      <Card title={t('识图（可选精度增强）')} sub={t('默认用软件内置的本机识图')}>
+      {/* 内置本地视觉模型：识图主力，模型按需下载，不进安装包 */}
+      <LocalVlmCard />
+
+      {/* 识图精度增强（可选）：在本地视觉模型之上再叠一个云端多模态 */}
+      <Card title={t('识图（可选精度增强）')} sub={t('本地视觉模型之外再加一层')}>
         <div className="setting-hint" style={{ textAlign: 'left', marginBottom: 12 }}>
-          {t('软件内置识图，无需配置：内置离线识别模型（MobileNetV2，1000 类，本机推理）直接判断「这是什么物体」并给出置信度，像素分析判断图像类型，Windows 自带 OCR 离线读出图中文字，本软件生成的图还会回查生成历史拿到提示词与主体。这些事实交给当前主模型理解并回答，所以纯文本主模型也能识图。下面只在需要更高精度时才用得上。')}
+          {t('识图优先用上面的本地视觉模型（装好模型后完全离线，能描述画面、读文字）。这里的云端多模态模型是可选的第二层：指定后会优先调用它，失败再自动回落到本地视觉模型与本机分类 + OCR，所以不会因为云端不可用就没法识图。')}
         </div>
         {(() => {
           const usable = providers.filter(p => p.enabled && p.hasKey && p.models.length > 0);

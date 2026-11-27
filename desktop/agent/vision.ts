@@ -64,6 +64,8 @@ export interface UnderstandResult {
   ok: boolean;
   /** 识图得到的文字报告（本机识图为主，可叠加可选多模态模型的描述） */
   text?: string;
+  /** 本机 OCR 读到的原文；上层用它校正视觉模型对「图中文字」的误判 */
+  ocrText?: string;
   error?: string;
   /** 干活的接入项与模型，便于向用户说明 */
   provider?: string;
@@ -249,7 +251,7 @@ async function localUnderstand(input: { bytes: Buffer; mime: string; query: stri
     const ocr = await ocrImageFile(ocrTarget);
     if (ocr.ok) {
       ocrAvailable = true;
-      ocrText = ocr.text;
+      ocrText = tidyOcrText(ocr.text);
       ocrLines = ocr.lines;
     } else {
       ocrNote = `本机 OCR 不可用：${ocr.error ?? '未知原因'}`;
@@ -271,6 +273,7 @@ async function localUnderstand(input: { bytes: Buffer; mime: string; query: stri
   return {
     ok: true,
     text,
+    ocrText: ocrText || undefined,
     provider: '本机',
     model: source ? `图片历史 + ${bits.join(' + ')}` : bits.join(' + '),
   };
@@ -315,17 +318,76 @@ function lookupGenerated(sourcePath?: string): string | null {
 }
 
 /**
- * 识图主入口：本机识图**永远先跑并保留**；用户在设置里额外指定了多模态模型时，
- * 再在其之上叠加一段该模型的画面描述作为精度增强。
- * 外部模型不可用或调用失败都不影响本机结果 —— 软件始终有识图能力。
+ * 识图主入口。三层能力，按这个顺序挑，任何一层失败都不影响下一层：
+ *   1. 用户在设置里显式指定的多模态接入项（可选精度增强）
+ *   2. 软件内置的本地视觉模型（Qwen2.5-VL-3B，离线，模型按需下载）
+ *   3. 本机兜底：MobileNet 1000 类 + 像素分析 + Windows OCR + 生成历史反查
+ * 永远返回一段可以据此回答的文字，不会出现「我看不了图」。
  */
 export async function understandImageBytes(input: { bytes: Buffer; mime: string; query: string; sourcePath?: string }): Promise<UnderstandResult> {
   const { bytes, mime, query } = input;
   const local = await localUnderstand({ bytes, mime, query, sourcePath: input.sourcePath });
+  const settings = getSettings();
 
+  /** 把本地兜底报告和视觉模型描述合成一段 */
+  const merge = (vlmText: string, vlmLabel: string): UnderstandResult => {
+    // 视觉模型经常在「图中文字」这一行写「无」，而本机 OCR 明明读到了 —— 以 OCR 为准：
+    // 有 OCR 原文时就把模型那一段剪掉，避免同一份报告里前后打架；没有 OCR 时保留模型的判断。
+    const clean = local.ocrText ? vlmText.replace(/\n*图中文字[：:][\s\S]*$/, '').trimEnd() : vlmText;
+    return {
+      ok: true,
+      text: `${clean.trim()}\n\n${local.ok ? local.text ?? '' : ''}`.trim(),
+      ocrText: local.ocrText,
+      provider: `本机视觉模型 · ${vlmLabel}`,
+      model: local.ok ? '视觉模型 + 分类 + OCR' : '视觉模型',
+    };
+  };
+
+  /* ---------- 1. 用户显式指定的多模态模型 ---------- */
   const hit = pickVisionTarget();
-  if (!hit) return local;
+  const explicit = (settings.visionProviderId ?? '').trim().length > 0 && !!hit;
+  if (hit && explicit) {
+    const described = await requestVision(hit, bytes, mime, query);
+    if (described.ok) {
+      const vlm = `【画面描述（${hit.label} · ${hit.modelId}）】\n${described.text}`;
+      return { ...merge(vlm, `${hit.label} · ${hit.modelId}`), provider: `本机 + ${hit.label}` };
+    }
+    // 外部模型失败：继续走内置本地视觉模型，别停在错误上
+    const fallback = await tryLocalVlm(bytes, mime, query, settings.localVlm !== false);
+    const note = `（多模态模型调用失败：${described.error}；已改用内置识图）`;
+    if (fallback) return { ...merge(`${fallback.text}\n\n${note}`, fallback.label), provider: '本机视觉模型' };
+    return local.ok ? { ...local, text: `${local.text}\n\n${note}` } : { ok: false, error: described.error };
+  }
 
+  /* ---------- 2. 内置本地视觉模型 ---------- */
+  const builtin = await tryLocalVlm(bytes, mime, query, settings.localVlm !== false);
+  if (builtin) return merge(builtin.text, builtin.label);
+
+  /* ---------- 3. 兜底 + 可选增强（用户没显式指定，但有可用视觉接入项） ---------- */
+  if (hit) {
+    const described = await requestVision(hit, bytes, mime, query);
+    if (described.ok) {
+      const vlm = `【画面描述（${hit.label} · ${hit.modelId}）】\n${described.text}`;
+      return { ...merge(vlm, `${hit.label} · ${hit.modelId}`), provider: `本机 + ${hit.label}` };
+    }
+    if (!local.ok) return { ok: false, error: described.error, provider: hit.label, model: hit.modelId };
+  }
+
+  return local.ok
+    ? {
+        ...local,
+        text: `${local.text}\n\n（本地视觉模型未就绪，以上为本机分类 + OCR + 像素分析结果）`,
+      }
+    : local;
+}
+
+/** 调一次外部多模态模型，只拿描述文本；失败返回 ok:false，不抛异常 */
+async function requestVision(
+  hit: VisionHit,
+  bytes: Buffer,
+  mime: string,
+  query: string,
+): Promise<{ ok: true; text: string } | { ok: false; error: string }> {
   const dataUrl = `data:${mime};base64,${bytes.toString('base64')}`;
   const messages: LlmMessage[] = [
     {
@@ -336,7 +398,6 @@ export async function understandImageBytes(input: { bytes: Buffer; mime: string;
       ],
     },
   ];
-
   let text = '';
   try {
     const stream = streamFor(hit.kind, {
@@ -354,21 +415,53 @@ export async function understandImageBytes(input: { bytes: Buffer; mime: string;
       else if (event.type === 'error') throw new Error(event.message);
     }
   } catch (err) {
-    if (!local.ok) return { ok: false, error: (err as Error).message, provider: hit.label, model: hit.modelId };
-    return {
-      ...local,
-      text: `${local.text}\n\n（可选的多模态模型调用失败：${(err as Error).message}；以上本机识图结果不受影响。）`,
-    };
+    return { ok: false, error: (err as Error).message };
   }
+  return text.trim() ? { ok: true, text: text.trim() } : { ok: false, error: '模型没有返回内容' };
+}
 
-  if (!text.trim()) return local;
-  const base = local.ok ? local.text ?? '' : '';
-  return {
-    ok: true,
-    text: `${base}\n\n【可选增强：${hit.label} · ${hit.modelId} 的画面描述】\n${text.trim()}`.trim(),
-    provider: local.ok ? `本机 + ${hit.label}` : hit.label,
-    model: local.ok ? `本机识图 + ${hit.modelId}` : hit.modelId,
-  };
+/** 内置本地视觉模型：没下载 / 关闭 / 失败都返回 null，绝不让主链路卡住 */
+async function tryLocalVlm(
+  bytes: Buffer,
+  mime: string,
+  query: string,
+  enabled: boolean,
+): Promise<{ text: string; label: string } | null> {
+  if (!enabled) return null;
+  try {
+    const { describeWithLocalVlm, localVlmAvailable, localVlmLabel } = await import('./vlm');
+    if (!localVlmAvailable()) return null;
+    const result = await describeWithLocalVlm({ bytes, query: visionQuery(query) });
+    if (!result.ok || !result.text) return null;
+    const seconds = result.ms ? `（${(result.ms / 1000).toFixed(1)}s）` : '';
+    return {
+      text: `【画面描述（本地视觉模型 ${localVlmLabel()}，本机离线推理${seconds}）】\n${result.text}`,
+      label: localVlmLabel(),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 给视觉模型的用户侧指令：只放用户这一问，格式要求全在 vlm.ts 的 system prompt 里。
+ * 之前把「逐字抄出图中文字…」这类规则写进 user 消息，模型会把规则当成图里的文字抄出来。
+ */
+function visionQuery(query: string): string {
+  return (query ?? '').trim() || '描述这张图片的内容。';
+}
+
+/**
+ * Windows OCR 会把每个汉字之间塞一个空格（"和 对 话"），直接交给模型读起来费劲，
+ * 也会让"逐字抄写"变成抄一堆空格。这里只收拾「汉字↔汉字」之间的空格和全角标点两侧，
+ * 英文单词之间的空格原样保留。
+ */
+function tidyOcrText(text: string): string {
+  return text
+    .replace(/(\p{Script=Han})\s+(\p{Script=Han})/gu, '$1$2')
+    .replace(/(\p{Script=Han})\s+([，。、；：？！）》」』])/gu, '$1$2')
+    .replace(/([《「『（])\s+(\p{Script=Han})/gu, '$1$2')
+    .replace(/(\p{Script=Han})\s+(\p{Script=Han})/gu, '$1$2');
 }
 
 /** 本地路径识图（会话附件走这里） */

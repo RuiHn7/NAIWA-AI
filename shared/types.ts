@@ -395,9 +395,51 @@ export interface AppSettings {
   visionModelId: string;
   /** 出图后是否自动让视觉模型核对画面（默认开；关掉就只在需要时手动调 image_understand） */
   visionAutoCheck: boolean;
+  /** 是否启用内置本地视觉模型（离线识图，模型按需下载） */
+  localVlm: boolean;
+  /** 本地视觉模型的自定义存放目录；空串表示 <会话根目录>/models/vlm */
+  vlmDir: string;
 }
 
 export type CloseAction = 'tray' | 'quit';
+
+/* --------------------------------------------------------------- 内置视觉模型 */
+
+export type VlmPhase = 'missing' | 'ready' | 'downloading' | 'verifying' | 'starting' | 'running' | 'error';
+
+export interface VlmProgress {
+  phase: VlmPhase;
+  /** 当前文件 */
+  file?: string;
+  /** 展示用标签，例如「1/2 主模型」 */
+  label?: string;
+  received: number;
+  total: number;
+  percent: number;
+  /** 下载速度（字节/秒） */
+  speed?: number;
+  source?: string;
+  message?: string;
+}
+
+export interface VlmStatus {
+  /** llama-server 运行时是否随安装包带到位 */
+  runtime: boolean;
+  /** 模型是否已下载完整 */
+  model: boolean;
+  /** 模型目录 */
+  dir: string;
+  /** 已占用字节数 */
+  bytes: number;
+  /** 模型已占用 / 完整后的字节数 */
+  total: number;
+  /** 完整模型的期望字节数（下载进度分母） */
+  expected: number;
+  phase: VlmPhase;
+  /** 本地服务是否已加载，能立刻识图 */
+  server: boolean;
+  message?: string;
+}
 
 /* --------------------------------------------------------------- 上下文用量 */
 

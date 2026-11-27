@@ -880,6 +880,51 @@ export const EN: Record<string, string> = {
   '没有手动指定时，会自动用第一个标了「支持图片」的模型作为增强；不指定也完全不影响本机识图。':
     'Without a manual choice, the first model tagged "vision" is used as a boost; leaving it unset does not affect on-device vision at all.',
 
+  /* ---------------- 内置本地视觉模型（离线识图） */
+  '本地视觉模型': 'Local vision model',
+  '本地视觉模型已就绪': 'Local vision model is ready',
+  '识图已就绪': 'Vision is ready',
+  '点一下可以换回内置识图或换一个多模态模型': 'Click to switch back to built-in vision or pick another multimodal model',
+  '本地视觉模型（离线）': 'Local vision model (offline)',
+  '用本地视觉模型识图': 'Use the local vision model for images',
+  '本地视觉模型下载完成': 'Local vision model downloaded',
+  '已停止下载，已下载的部分保留，可继续': 'Download stopped; partial file kept for resuming',
+  '已删除本地视觉模型': 'Local vision model deleted',
+  '没有可删除的模型': 'Nothing to delete',
+  '模型已加载': 'Model loaded',
+  '加载失败': 'Failed to load',
+  '加载中…': 'Loading…',
+  '校验模型完整性…': 'Verifying model integrity…',
+  '下载模型（约 2.7GB，可断点续传）': 'Download model (≈2.7 GB, resumable)',
+  '预热（先把模型读进显存）': 'Warm up (preload into VRAM)',
+  '删除模型': 'Delete model',
+  '运行时': 'Runtime',
+  '已随安装包就位': 'bundled with the app',
+  '缺失，需重新安装最新版本': 'missing — reinstall the latest version',
+  '存放目录': 'Model folder',
+  未下载: 'Not downloaded',
+  未就绪: 'Not ready',
+  '已就绪（未加载）': 'Ready (not loaded)',
+  校验中: 'Verifying',
+  加载中: 'Starting',
+  '已加载，可识图': 'Loaded — ready for images',
+  异常: 'Error',
+  '安装包只带推理运行时（约 70MB），模型在第一次下载后长期留在本机，之后完全离线识图：描述画面内容、读图中文字、回答「这是什么」。不下载也照样能用原来的本机识图。':
+    'The installer only carries the runtime (≈70 MB). The model is downloaded once, stays on this machine, and then runs fully offline: describing scenes, reading text in images, answering "what is this". Without it, the built-in classifier and OCR still work.',
+  '本地视觉模型之外再加一层': 'One more optional layer on top of the local model',
+  '识图优先用上面的本地视觉模型（装好模型后完全离线，能描述画面、读文字）。这里的云端多模态模型是可选的第二层：指定后会优先调用它，失败再自动回落到本地视觉模型与本机分类 + OCR，所以不会因为云端不可用就没法识图。':
+    'Vision uses the local model above first (fully offline once downloaded). This cloud multimodal model is an optional second layer: when set it is tried first, and any failure falls back to the local model plus classifier and OCR, so a cloud outage never disables vision.',
+  'Qwen2.5-VL-3B 在本机离线推理，能描述画面、读图中文字': 'Qwen2.5-VL-3B runs offline on this machine and can describe scenes and read text',
+  '点这里可以换成云端多模态模型，进一步提升精度': 'Click to switch to a cloud multimodal model for extra accuracy',
+  '内置识图已就绪': 'Built-in vision is ready',
+  '离线分类（1000 类）、像素分析、离线 OCR 与生成历史反查，不需要任何配置':
+    'Offline classifier (1000 classes), pixel analysis, offline OCR and image-history lookup — no setup needed',
+  '想要能描述任意画面的效果，去设置里下载本地视觉模型（一次性，之后离线）':
+    'For descriptions of any image, download the local vision model in Settings (one time, then offline)',
+  '内置识图（本地视觉模型 + 分类 + OCR，无需配置）': 'Built-in vision (local model + classifier + OCR, no setup)',
+  '内置识图默认可用：下载了本地视觉模型就能描述任意画面、读图中文字；没下载时用离线分类 + 像素分析 + OCR 兜底。下面列出的云端多模态模型是可选的精度增强。':
+    'Built-in vision works out of the box: with the local model downloaded it can describe any scene and read text; without it, the offline classifier, pixel analysis and OCR take over. The cloud models below are an optional boost.',
+
   /* ---------------- 时间与时长（src/lib/format.ts） */
   刚刚: 'just now',
   '{n} 分钟前': '{n}m ago',

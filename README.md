@@ -13,6 +13,7 @@ npm install
 npm run dev          # 开发模式（vite dev server + electron）
 npm start            # 生产构建后直接启动
 npm run dist:win     # 打包 Windows 安装包（NSIS）
+npm run fetch:llama  # 取本地视觉模型运行时到 assets/llama（打包前跑一次）
 npm run dist:mac     # 打包 macOS dmg
 npm run dist:linux   # 打包 Linux AppImage + deb
 ```
@@ -87,6 +88,14 @@ system prompt 的第一段永远是「身份与工作规则」（`desktop/agent/
 **产物落在会话自己的文件夹里**：`generate_image`、`run_code`、`spill` 的落盘目录按 `会话文件夹/artifacts` → `<工作区>/artifacts` → 应用数据目录 依次回退；会话有文件夹时产物就跟着会话走（`<会话目录>/artifacts/images/gen-<时间戳>-0.png`），不再堆在 C 盘的 `%APPDATA%\naiwa-desktop\images` 下。`ls` / `read_file` / `grep` 的相对路径仍然优先按工作区解析，没有工作区时落到 `<会话目录>/files/`。
 
 **会话末尾有产物汇总**：一轮答完（流式结束）后，消息流末尾会出现「本次会话的产物」面板，把该会话文件夹里 `artifacts / files / exports / attachments` 下的所有产物铺开 —— 图片直接是缩略图，其它文件是可点条目（点一下在右栏读，右侧小图标是打开存放位置）。面板可收起，产物只在流式进行中隐藏，不用往上翻去找。
+
+### 识图：内置本地视觉模型（离线）
+识图不依赖主模型是不是多模态，三层接力，任何一层失败都往下退：
+1. **本地视觉模型**：`llama.cpp`（Vulkan 版，随安装包分发约 70MB）+ **Qwen2.5-VL-3B**（首次使用时下载到 `<会话根目录>/models/vlm`，约 2.7GB，SHA-256 校验，装好之后完全离线）。能描述画面、读图中文字、回答「这是什么」，8G 显存约 1–5 秒一张。
+2. **可选云端多模态**：设置里显式指定的接入项优先；失败自动回落，不会因为云端不可用就没法识图。
+3. **本机兜底**：MobileNetV2（1000 类）+ 像素分析 + Windows OCR + 生成历史反查 —— 模型没下载时照样有识图结果，不会出现「我看不了图」。
+
+模型不进 asar/安装包：`scripts/fetch-llama.mjs` 负责取运行时（打包时由 `extraResources` 复制到 `resources/llama`），模型由应用内下载器按需下载、断点续传、可删除。开发态把运行时放 `assets/llama`，模型目录可用设置里的 `vlmDir` 覆盖。
 
 ### 出图：内置渲染兜底
 `设置 → 图片生成` 的后端列表第一项固定是 **「内置渲染（本地，不需要 Key）」**：
@@ -169,7 +178,8 @@ desktop/                主进程
   llm/                  openai.ts / anthropic.ts / gemini.ts / registry.ts / sse.ts
   agent/                runner.ts（ReAct 主循环）/ tools.ts / compress.ts /
                         permissions.ts / sandbox.ts / prompt.ts / imagegen.ts /
-                        paint.ts（内置程序化出图）/ update.ts（版本检查）
+                        paint.ts（内置程序化出图）/ vlm.ts（本地视觉模型托管）/
+                        vision.ts（识图三层接力）/ update.ts（版本检查）
   mcp/                  client.ts（手写 JSON-RPC）/ store.ts
   tasks/scheduler.ts    cron 与一次性任务调度
 shared/                 types.ts / ipc.ts —— 主进程与渲染层共用契约

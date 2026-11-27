@@ -73,6 +73,15 @@ import { fetchBalance } from '../llm/balance';
 import { LlmError } from '../llm/types';
 import { sendMessage, stopChat, regenerate, usageOf, compressNow } from '../agent/runner';
 import { generateImages } from '../agent/imagegen';
+import {
+  cancelDownload as cancelVlmDownload,
+  deleteModel as deleteVlmModel,
+  downloadModel as downloadVlmModel,
+  setVlmProgressSink,
+  stopServer as stopVlmServer,
+  vlmStatus,
+  warmupLocalVlm,
+} from '../agent/vlm';
 import { cancelDownload, checkForUpdate, clearDownload, downloadUpdate, launchInstaller } from '../agent/update';
 import { listPending, resolveApproval } from '../agent/permissions';
 import { runtimeInfo } from '../agent/sandbox';
@@ -103,6 +112,9 @@ function handle<K extends keyof InvokeMap>(
 export type Emit = <K extends keyof EventMap>(channel: K, payload: EventMap[K]) => void;
 
 export function registerIpc(emit: Emit): void {
+  // 本地视觉模型的下载进度直接推给界面
+  setVlmProgressSink(progress => emit('vlm:progress', progress));
+
   /* ------------------------------------------------------------ 应用与设置 */
 
   handle('app:info', () => ({
@@ -449,6 +461,17 @@ export function registerIpc(emit: Emit): void {
   handle('persona:save', input => savePersona(input));
   handle('persona:delete', ({ id }) => {
     deletePersona(id);
+  });
+
+  /* ------------------------------------------------------------ 内置本地视觉模型 */
+
+  handle('vlm:status', () => vlmStatus());
+  handle('vlm:download', () => downloadVlmModel());
+  handle('vlm:cancel', () => cancelVlmDownload());
+  handle('vlm:delete', () => deleteVlmModel());
+  handle('vlm:warmup', () => warmupLocalVlm());
+  handle('vlm:stop', async () => {
+    await stopVlmServer();
   });
 
   /* ------------------------------------------------------------ 图片生成 */

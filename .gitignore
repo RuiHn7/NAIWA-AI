@@ -15,6 +15,9 @@ shots/
 # 内置渲染的临时出图验收目录
 .paint-test/
 
+# 本地视觉模型运行时（脚本下载，打包时随安装包分发，不进 git）
+assets/llama/
+
 # 系统 / 编辑器
 .DS_Store
 Thumbs.db

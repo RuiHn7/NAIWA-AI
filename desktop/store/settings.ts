@@ -31,6 +31,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   visionProviderId: '',
   visionModelId: '',
   visionAutoCheck: true,
+  localVlm: true,
+  vlmDir: '',
 };
 
 let cache: AppSettings | null = null;
@@ -59,6 +61,8 @@ export function saveSettings(patch: Partial<AppSettings>): AppSettings {
   // 只留 providerId 没留 modelId 时，modelId 保持空串，由识图逻辑在该接入项里自动挑
   if (!next.visionProviderId) next.visionModelId = '';
   next.visionAutoCheck = next.visionAutoCheck !== false;
+  next.localVlm = next.localVlm !== false;
+  next.vlmDir = typeof next.vlmDir === 'string' ? next.vlmDir.trim() : '';
   if (!VALID_THEME.includes(next.theme)) next.theme = 'system';
   if (!VALID_LOCALE.includes(next.locale)) next.locale = 'zh-CN';
   if (!VALID_THINKING.includes(next.defaultThinking)) next.defaultThinking = 'high';

@@ -26,6 +26,8 @@ import type {
   TaskRunRecord,
   ThinkingLevel,
   UsageRecord,
+  VlmProgress,
+  VlmStatus,
   Workspace,
   WorkspaceFile,
 } from './types';
@@ -262,6 +264,18 @@ export interface InvokeMap {
   'persona:save': { req: { id?: string; name: string; icon: string; systemPrompt: string }; res: Persona };
   'persona:delete': { req: { id: string }; res: void };
 
+  /* -------------------------------------------------- 内置本地视觉模型 */
+  /** 运行时 / 模型 / 服务当前状态 */
+  'vlm:status': { req: void; res: VlmStatus };
+  /** 下载模型（进度走 vlm:progress 事件，可取消，已下载部分保留） */
+  'vlm:download': { req: void; res: { ok: boolean; canceled?: boolean; error?: string } };
+  'vlm:cancel': { req: void; res: { ok: boolean; canceled: boolean } };
+  /** 删除已下载的模型释放空间（不影响运行时） */
+  'vlm:delete': { req: void; res: { ok: boolean; removed: number } };
+  /** 预热：提前把模型加载到显存，第一张图不用等 */
+  'vlm:warmup': { req: void; res: { ok: boolean; ms?: number; error?: string } };
+  'vlm:stop': { req: void; res: void };
+
   /* -------------------------------------------------- 图片生成 */
   'image:providers': { req: void; res: ImageProviderConfig[] };
   'image:save-provider': {
@@ -335,6 +349,7 @@ export interface EventMap {
     sources?: number;
   };
   'theme:changed': { shouldUseDarkColors: boolean };
+  'vlm:progress': VlmProgress;
   'mcp:state': McpServerState;
   'task:completed': { task: ScheduledTask; record: TaskRunRecord };
   'nav:command': { command: 'new-chat' | 'export' | 'command-palette' | 'stop' | 'settings' };

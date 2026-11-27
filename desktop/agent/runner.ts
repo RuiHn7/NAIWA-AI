@@ -108,7 +108,7 @@ function historyToLlm(chat: Chat, allowImages: boolean): LlmMessage[] {
       }
       let text = m.content;
       if (skipped.length) {
-        text += `\n\n[图片附件：${skipped.join('；')}。图片像素没有内联发送；软件内置本机识图，调用 image_understand 即可拿到图里的文字与画面报告，基于报告回答，不要凭空猜测。]`;
+        text += `\n\n[图片附件：${skipped.join('；')}。图片像素没有内联发送；软件内置识图（本地视觉模型 + 分类 + OCR），调用 image_understand 即可拿到图里的文字与画面报告，基于报告回答，不要凭空猜测。]`;
       }
       parts.push({ type: 'text', text });
       out.push({ role: 'user', content: parts });
@@ -365,7 +365,7 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
     hasTools: schemas.length > 0,
     toolCatalog: catalog,
     compressedSummary: latestSummary(fresh),
-    vision: apiModel.vision !== false,
+    vision: apiModel.vision === true,
   });
 
   let content = '';
@@ -389,7 +389,9 @@ export async function sendMessage(input: SendMessageInput): Promise<SendMessageR
       turns += 1;
       pendingToolCalls = [];
 
-      const history = historyToLlm(getChat(fresh.id)!, apiModel.vision !== false);
+      // 只有明确标了「支持图片」的模型才内联图片；模型列表里没打标记的一律按纯文本处理，
+      // 否则把像素硬塞给文本模型，它会照着提示词编画面（用户报过「回复里凭空描述星空」）。
+      const history = historyToLlm(getChat(fresh.id)!, apiModel.vision === true);
       const messages: LlmMessage[] = [{ role: 'system', content: systemPrompt.system }, ...history];
 
       const stream = streamFor(provider.kind, {

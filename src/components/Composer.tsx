@@ -12,6 +12,7 @@ import { Icon } from '@/components/Icon';
 import { Menu, MenuItem, MenuLabel, MenuSep, useMenu, anchorOf, type MenuAnchor } from '@/components/Menu';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { useApp, selectActiveModel, selectThinking } from '@/store/useApp';
+import { invoke, on } from '@/lib/bridge';
 import { formatTokens, usageLevel } from '@/lib/format';
 import { useT } from '@/lib/i18n';
 import type { PermissionMode, ThinkingLevel } from '@shared/types';
@@ -352,8 +353,7 @@ export function Composer() {
   };
 
   /* 识图（视觉）模型：设置里显式指定优先，否则自动挑第一个带视觉标记的模型 */
-  const visionTarget = (() => {
-    const wantedProvider = (settings?.visionProviderId ?? '').trim();
+  const visionTarget = (() => {    const wantedProvider = (settings?.visionProviderId ?? '').trim();
     const wantedModel = (settings?.visionModelId ?? '').trim();
     if (wantedProvider) {
       const p = providers.find(x => x.id === wantedProvider);
@@ -370,6 +370,27 @@ export function Composer() {
     }
     return null;
   })();
+
+  /** 内置本地视觉模型是否已下载（有模型才算「本地视觉模型」，没下载还是本机分类+OCR） */
+  const [localVlmReady, setLocalVlmReady] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const load = () => {
+      void invoke('vlm:status', undefined)
+        .then(s => {
+          if (alive) setLocalVlmReady(!!s.model);
+        })
+        .catch(() => {});
+    };
+    load();
+    const off = on('vlm:progress', () => load());
+    const timer = window.setInterval(load, 20_000);
+    return () => {
+      alive = false;
+      off();
+      window.clearInterval(timer);
+    };
+  }, []);
 
   /** 识图面板：本机识图始终可用，所以不再因为没有接入项就把人赶去设置页 */
   const openVision = (el: HTMLElement) => {
@@ -529,14 +550,18 @@ export function Composer() {
               data-tone={visionTarget ? (visionTarget.manual ? 'manual' : 'auto') : 'local'}
               title={
                 visionTarget
-                  ? `${t('本机识图已就绪')} + ${visionTarget.providerLabel} · ${visionTarget.modelLabel}（${visionTarget.manual ? t('已手动指定') : t('自动挑选')}）\n${t('点一下可以换一个多模态模型（可选）')}`
-                  : `${t('本机识图已就绪')}：${t('软件内置离线识别模型（1000 类物体）、像素分析、离线 OCR 与生成历史反查，不需要任何配置')}\n${t('点这里可选接入一个多模态模型，进一步提升精度')}`
+                  ? `${t('识图已就绪')}：${visionTarget.providerLabel} · ${visionTarget.modelLabel}（${visionTarget.manual ? t('已手动指定') : t('自动挑选')}）\n${t('点一下可以换回内置识图或换一个多模态模型')}`
+                  : localVlmReady
+                    ? `${t('本地视觉模型已就绪')}：${t('Qwen2.5-VL-3B 在本机离线推理，能描述画面、读图中文字')}\n${t('点这里可以换成云端多模态模型，进一步提升精度')}`
+                    : `${t('内置识图已就绪')}：${t('离线分类（1000 类）、像素分析、离线 OCR 与生成历史反查，不需要任何配置')}\n${t('想要能描述任意画面的效果，去设置里下载本地视觉模型（一次性，之后离线）')}`
               }
               aria-label={t('识图')}
               onClick={e => openVision(e.currentTarget)}
             >
               <Icon name="image" size={12} />
-              <span className="pill-label">{visionTarget ? visionTarget.modelLabel : t('本机识图')}</span>
+              <span className="pill-label">
+                {visionTarget ? visionTarget.modelLabel : localVlmReady ? t('本地视觉模型') : t('本机识图')}
+              </span>
             </button>
 
             {/* 余额：贴右、在模型按钮左边 */}
@@ -738,7 +763,7 @@ export function Composer() {
             <>
               <MenuLabel>{t('识图')}</MenuLabel>
               <div className="menu-note">
-                {t('软件内置本机识图已就绪：解码、像素分析、Windows 离线 OCR、生成历史反查，不需要任何配置。下面列出的多模态模型只是可选的精度增强 —— 指定后会在识图结果上再叠加一段画面描述。')}
+                {t('内置识图默认可用：下载了本地视觉模型就能描述任意画面、读图中文字；没下载时用离线分类 + 像素分析 + OCR 兜底。下面列出的云端多模态模型是可选的精度增强。')}
               </div>
               <MenuItem
                 icon={<Icon name="spark" size={14} />}
@@ -749,7 +774,7 @@ export function Composer() {
                   pickVision(null);
                 }}
               >
-                {t('本机识图（默认，无需配置）')}
+                {t('内置识图（本地视觉模型 + 分类 + OCR，无需配置）')}
               </MenuItem>
               <MenuSep />
               <div className="menu-scroll">

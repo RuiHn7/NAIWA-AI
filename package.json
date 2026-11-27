@@ -1,6 +1,6 @@
 {
   "name": "naiwa-desktop",
-  "version": "1.3.3",
+  "version": "1.3.4",
   "private": true,
   "description": "NAI WA · 桌面端 AI Agent",
   "author": {
@@ -20,6 +20,7 @@
     "build:main": "node scripts/build-main.mjs",
     "build:web": "vite build",
     "build": "npm run build:main && npm run build:web",
+    "fetch:llama": "node scripts/fetch-llama.mjs",
     "start": "npm run build && node scripts/app-exe.mjs && \"node_modules\\electron\\dist\\NAI WA.exe\" .",
     "dist:win": "npm run build && electron-builder --win nsis",
     "dist:mac": "npm run build && electron-builder --mac dmg",

@@ -14,6 +14,13 @@
     "build/icon.ico"
   ],
   "asar": true,
+  "extraResources": [
+    {
+      "from": "assets/llama",
+      "to": "llama",
+      "filter": ["llama-server.exe", "*.dll", "LICENSE*"]
+    }
+  ],
   "win": {
     "target": [
       { "target": "nsis", "arch": ["x64"] }
